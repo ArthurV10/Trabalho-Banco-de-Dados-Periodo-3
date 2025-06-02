@@ -44,7 +44,7 @@ Nosso foco foi criar um sistema de banco de dados robusto o suficiente para ilus
 
 ## 📄 Estrutura do Banco de Dados
 
-Você pode incluir aqui um diagrama ER (Entidade-Relacionamento) simples ou uma lista das principais tabelas e suas relações para facilitar o entendimento.
+![Diagrama Entidade-Relacionamento do Banco de Dados](Diagrama%20Lavanderia%20-%20Projeto%20BD.png)
 
 ---
 
