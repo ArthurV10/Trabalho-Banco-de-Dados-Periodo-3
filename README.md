@@ -23,7 +23,7 @@ Nosso foco foi criar um sistema de banco de dados robusto o suficiente para ilus
 * PostgreSQL
 ---
 
-## 🚀 Como Executar/Visualizar o Projeto (Exemplo - Adapte conforme seu projeto)
+## 🚀 Como Executar/Visualizar o Projeto
 
 1.  **Clone o repositório:**
     ```bash
