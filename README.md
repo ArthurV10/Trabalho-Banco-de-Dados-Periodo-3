@@ -21,10 +21,6 @@ Nosso foco foi criar um sistema de banco de dados robusto o suficiente para ilus
 ## 🛠️ Tecnologias Utilizadas
 
 * PostgreSQL
-* [Linguagem de programação, ex: Python, Java, etc., se aplicável]
-* [Ferramentas de modelagem, ex: DB Designer, MySQL Workbench, se aplicável]
-* [Outras ferramentas ou bibliotecas relevantes]
-
 ---
 
 ## 🚀 Como Executar/Visualizar o Projeto (Exemplo - Adapte conforme seu projeto)
@@ -46,7 +42,7 @@ Nosso foco foi criar um sistema de banco de dados robusto o suficiente para ilus
 
 ---
 
-## 📄 Estrutura do Banco de Dados (Opcional, mas recomendado)
+## 📄 Estrutura do Banco de Dados
 
 Você pode incluir aqui um diagrama ER (Entidade-Relacionamento) simples ou uma lista das principais tabelas e suas relações para facilitar o entendimento.
 
