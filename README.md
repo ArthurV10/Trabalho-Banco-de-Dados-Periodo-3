@@ -27,17 +27,17 @@ Nosso foco foi criar um sistema de banco de dados robusto o suficiente para ilus
 
 1.  **Clone o repositório:**
     ```bash
-    git clone [https://github.com/SEU_USUARIO/SEU_REPOSITORIO.git](https://github.com/SEU_USUARIO/SEU_REPOSITORIO.git)
+    git clone https://github.com/ArthurV10/Trabalho-Banco-de-Dados-Periodo-3.git
     ```
-2.  **Navegue até a pasta do projeto:**
-    ```bash
-    cd SEU_REPOSITORIO
-    ```
-3.  **Instruções de Configuração do Banco de Dados:**
+2.  **Instruções de Configuração do Banco de Dados:**
     * Cada pasta possui um arquivo essencial para a utilização do **Banco de Dados**
     * O arquivo **'populate_tables.sql'** serve para a criação de tabelas e povoamento das tabelas
     * O arquivo **'data_manipulation.sql'** serve para fazer a manipulação na estrutura dos dados
     * O arquivo **'database_function.sqp'** possui as funções que fazem ações extras no banco de dados, como condicionais e outras verificações extras
+  
+3.  **Instruções de Utilização:**
+   * Abra os 3 arquivos no PostgreSQL, primeiro povoe todas as tabelas, depois vá fazendo todas as ações conforme o que você desejar, por exemplo:
+     * Select, Insert e etc
 
 ## 📄 Estrutura do Banco de Dados
 
