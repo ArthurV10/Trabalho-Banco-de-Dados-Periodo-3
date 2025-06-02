@@ -34,13 +34,10 @@ Nosso foco foi criar um sistema de banco de dados robusto o suficiente para ilus
     cd SEU_REPOSITORIO
     ```
 3.  **Instruções de Configuração do Banco de Dados:**
-    * [Explique como o professor (ou qualquer um) pode configurar e popular o banco de dados. Ex: "Importe o arquivo `database.sql` para o seu servidor MySQL."]
-    * [Detalhe quaisquer dependências ou pré-requisitos, como a instalação de um SGBD específico.]
-
-4.  **Execução da Aplicação (se houver):**
-    * [Se o projeto tiver uma aplicação que interage com o banco de dados, forneça instruções claras sobre como executá-la.]
-
----
+    * Cada pasta possui um arquivo essencial para a utilização do **Banco de Dados**
+    * O arquivo **'populate_tables.sql'** serve para a criação de tabelas e povoamento das tabelas
+    * O arquivo **'data_manipulation.sql'** serve para fazer a manipulação na estrutura dos dados
+    * O arquivo **'database_function.sqp'** possui as funções que fazem ações extras no banco de dados, como condicionais e outras verificações extras
 
 ## 📄 Estrutura do Banco de Dados
 
