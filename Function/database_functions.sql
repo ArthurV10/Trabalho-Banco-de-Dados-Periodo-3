@@ -1,1 +1,1 @@
--- Codigo para funções das tabelas (Se necessário) --
+-- Codigo para funções das tabelas --
