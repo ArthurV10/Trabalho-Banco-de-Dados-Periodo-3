@@ -1,4 +1,4 @@
--------------------- TABELAS PRINCIPAIS --------------------
+
 
 CREATE TABLE CLIENTE (
     ID_CLIENTE SERIAL PRIMARY KEY,
@@ -236,21 +236,7 @@ SELECT CADASTRAR('lavagem_produto', '8, 7, 0.15'); -- Lavagem 8 usou Detergente 
 SELECT CADASTRAR('lavagem_produto', '9, 1, 0.20'); -- Lavagem 9 usou Sabão Líquido
 SELECT CADASTRAR('lavagem_produto', '10, 2, 0.06'); -- Lavagem 10 usou Amaciante Perfumado
 
-SELECT * FROM cliente;
-SELECT * FROM funcionario;
-SELECT * FROM tipo_lavagem;
-SELECT * FROM tipo_pagamento;
-SELECT * FROM fornecedor;
-SELECT * FROM produto;
-SELECT * FROM compra;
-SELECT * FROM item;
-SELECT * FROM lavagem;
-SELECT * FROM parcela;
-SELECT * FROM lavagem_produto;
-SELECT * FROM auditoria_log;
-
 SELECT CADASTRAR('cliente', 'DEFAULT, ''Ana Pereira'', ''111.111.111-11'', ''1985-03-10'', ''86981234567'', ''ana.pereira@email.com'', ''Rua das Flores, 101, Centro, Teresina-PI'', ''Lavagem a seco para vestidos'', DEFAULT, ''2025-06-15''');
-
 
 SELECT deletar('auditoria_log');
 ALTER SEQUENCE auditoria_log_id_log_seq RESTART WITH 1;

@@ -332,3 +332,18 @@ BEGIN
 END;
 $$
 LANGUAGE PLPGSQL;
+
+CREATE OR REPLACE FUNCTION ATUALIZAR_STATUS_PARCELAS()
+RETURNS VOID AS $$
+BEGIN
+    -- O comando UPDATE vai alterar a tabela 'parcela'
+    UPDATE parcela
+    -- Define o novo valor para a coluna 'status_parcela'
+    SET status_parcela = 'ATRASADO'
+    -- A cláusula WHERE especifica QUAIS parcelas devem ser alteradas
+    WHERE 
+        dt_vencimento < CURRENT_DATE  -- Condição 1: A data de vencimento já passou
+        AND status_parcela = 'PENDENTE'; -- Condição 2: E o status atual ainda é 'PENDENTE'
+END;
+$$
+LANGUAGE PLPGSQL;
