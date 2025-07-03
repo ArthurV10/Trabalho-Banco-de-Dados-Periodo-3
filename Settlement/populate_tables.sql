@@ -3,7 +3,7 @@
 CREATE TABLE CLIENTE (
     ID_CLIENTE SERIAL PRIMARY KEY,
     NOME VARCHAR(100) NOT NULL, 
-    CPF VARCHAR(15) UNIQUE NOT NULL, --- UNIQUE impõe que todos os valores de uma coluna (ou combinação de colunas) sejam exclusivos
+    CPF VARCHAR(15) NOT NULL,
     DT_NASC DATE,
     TELEFONE VARCHAR(20),
     EMAIL VARCHAR(100),
@@ -16,7 +16,7 @@ CREATE TABLE CLIENTE (
 CREATE TABLE FUNCIONARIO (
     ID_FUNCIONARIO SERIAL PRIMARY KEY,
     NOME VARCHAR(100) NOT NULL,
-    CPF VARCHAR(15) UNIQUE NOT NULL,
+    CPF VARCHAR(15) NOT NULL, --- ALTERAR AQUI TAMBEM ---
     CARGO VARCHAR(50),
     DT_CONTRATACAO DATE,
     TELEFONE VARCHAR(20),
@@ -34,13 +34,14 @@ CREATE TABLE TIPO_LAVAGEM (
 
 CREATE TABLE TIPO_PAGAMENTO (
     ID_TIPO_PAGAMENTO SERIAL PRIMARY KEY,
-    DESCRICAO VARCHAR(70) NOT NULL
+    NOME VARCHAR(30) NOT NULL,
+    DESCRICAO VARCHAR(120) NOT NULL
 );
 
 CREATE TABLE FORNECEDOR (
     ID_FORNECEDOR SERIAL PRIMARY KEY,
     NOME VARCHAR(100) NOT NULL,
-    CNPJ VARCHAR(20) UNIQUE,
+    CNPJ VARCHAR(20),
     TELEFONE VARCHAR(20),
     EMAIL VARCHAR(100),
     ENDERECO VARCHAR(255)
@@ -53,7 +54,7 @@ CREATE TABLE PRODUTO (
     NOME VARCHAR(100) NOT NULL,
     DESCRICAO TEXT,
     UNIDADE_MEDIDA VARCHAR(20) NOT NULL,
-    QTD_ESTOQUE DECIMAL(10,2) NOT NULL CHECK (QTD_ESTOQUE >= 0)
+    QTD_ESTOQUE DECIMAL(10,2) NOT NULL
 );
 
 CREATE TABLE COMPRA (
@@ -63,8 +64,6 @@ CREATE TABLE COMPRA (
     VALOR_TOTAL DECIMAL(10,2) NOT NULL,
     STATUS_COMPRA VARCHAR(50) CHECK (STATUS_COMPRA IN ('PENDENTE','ENTREGUE','CANCELADA'))  --- Cria uma restrição de verificação (CHECK) que só permite que ela assuma valores informados.
 );
-DROP TABLE compra CASCADE;
-
 
 CREATE TABLE ITEM (
     ID_ITEM SERIAL PRIMARY KEY,
@@ -161,11 +160,11 @@ SELECT CADASTRAR('tipo_lavagem', 'DEFAULT, ''Higienização de Sofá (Unidade)''
 
 
 -- Inserção na tabela tipo_pagamento (5 formas de pagamento mais comuns)
-SELECT CADASTRAR('tipo_pagamento', 'DEFAULT, ''Cartão de Crédito''');
-SELECT CADASTRAR('tipo_pagamento', 'DEFAULT, ''Cartão de Débito''');
-SELECT CADASTRAR('tipo_pagamento', 'DEFAULT, ''Dinheiro''');
-SELECT CADASTRAR('tipo_pagamento', 'DEFAULT, ''PIX''');
-SELECT CADASTRAR('tipo_pagamento', 'DEFAULT, ''Boleto Bancário''');
+SELECT CADASTRAR('tipo_pagamento', 'DEFAULT, ''Cartão de Crédito'', ''Pagamento realizado via cartão de crédito, com possibilidade de parcelamento em até 12 vezes.''');
+SELECT CADASTRAR('tipo_pagamento', 'DEFAULT, ''Cartão de Débito'', ''Pagamento realizado via cartão de débito, com valor debitado diretamente da conta bancária.''');
+SELECT CADASTRAR('tipo_pagamento', 'DEFAULT, ''Dinheiro'', ''Pagamento realizado em espécie, sem a necessidade de intermediários eletrônicos.''');
+SELECT CADASTRAR('tipo_pagamento', 'DEFAULT, ''PIX'', ''Pagamento instantâneo via sistema PIX, com transação concluída em segundos.''');
+SELECT CADASTRAR('tipo_pagamento', 'DEFAULT, ''Boleto Bancário'', ''Pagamento realizado através de boleto bancário, com prazo para compensação.''');
 
 -- Inserção na tabela fornecedor (5 fornecedores principais)
 SELECT CADASTRAR('fornecedor', 'DEFAULT, ''Limpa Tudo Soluções'', ''00.111.222/0001-33'', ''8630001111'', ''contato@limpatudo.com'', ''Rua das Indústrias, 100, Teresina-PI''');
@@ -249,6 +248,9 @@ SELECT * FROM lavagem;
 SELECT * FROM parcela;
 SELECT * FROM lavagem_produto;
 SELECT * FROM auditoria_log;
+
+SELECT CADASTRAR('cliente', 'DEFAULT, ''Ana Pereira'', ''111.111.111-11'', ''1985-03-10'', ''86981234567'', ''ana.pereira@email.com'', ''Rua das Flores, 101, Centro, Teresina-PI'', ''Lavagem a seco para vestidos'', DEFAULT, ''2025-06-15''');
+
 
 SELECT deletar('auditoria_log');
 ALTER SEQUENCE auditoria_log_id_log_seq RESTART WITH 1;
