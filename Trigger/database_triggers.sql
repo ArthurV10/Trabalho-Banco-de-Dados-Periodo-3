@@ -85,7 +85,7 @@ FOR EACH ROW
 EXECUTE FUNCTION CHECAR_CPF_UNICO_FORNECEDOR();
 
 -- Trigger para verificar se os valores são positivos na tabela tipo_lavagem --
-CREATE OR REPLACE TRIGGER trg_check_positive_prices_tipo_lavagem
+CREATE OR REPLACE TRIGGER trg_checar_preco_positivo_tipo_lavagem
 BEFORE INSERT OR UPDATE ON TIPO_LAVAGEM
 FOR EACH ROW
 EXECUTE FUNCTION checar_preco_positivo_tipo_lavagem();
@@ -95,3 +95,15 @@ CREATE OR REPLACE TRIGGER trg_verificar_qtd_estoque_positiva_produto
 BEFORE INSERT OR UPDATE ON PRODUTO
 FOR EACH ROW
 EXECUTE FUNCTION verificar_qtd_estoque_positiva_produto();
+
+-- Trigger para colocar nulo a FK na tabela compra referente ao fornecedor --
+CREATE TRIGGER trg_deletar_forncedor_e_deixar_fk_nulo_compra
+BEFORE DELETE ON FORNECEDOR
+FOR EACH ROW
+EXECUTE FUNCTION DELETAR_FORNECEDOR_E_DEIXAR_FK_NULO_COMPRA();
+
+-- Trigger para limitar os valores do status aos padrões fornecidos -- 
+CREATE OR REPLACE TRIGGER trg_limitar_valores_status_compra
+BEFORE INSERT OR UPDATE ON COMPRA
+FOR EACH ROW
+EXECUTE FUNCTION LIMITAR_VALORES_STATUS_COMPRA();
