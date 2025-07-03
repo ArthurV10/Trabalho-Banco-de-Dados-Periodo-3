@@ -7,16 +7,40 @@ CREATE OR REPLACE FUNCTION CADASTRAR(
 )
 RETURNS VOID
 AS $$
+DECLARE
+    -- Variáveis para capturar os detalhes do erro original
+    v_original_error_message TEXT;
+    v_original_sqlstate TEXT;
 BEGIN
+	-- Tenta executar a inserção.
+	-- Se um erro ocorrer aqui, ele será capturado pelo bloco EXCEPTION abaixo.
 	EXECUTE 'INSERT INTO ' || quote_ident(P_NOME_TABELA) || ' VALUES (' || P_VALORES_PARA_INSERIR || ')';
-	-- Note o espaço extra depois de 'INSERT INTO ' e antes de ' VALUES ('
-	-- A função quote_ident() é usada para lidar com nomes de tabelas que podem conter caracteres especiais ou serem palavras-chave.
 
+	-- Esta notificação só será exibida se a inserção for bem-sucedida.
 	RAISE NOTICE 'Dados inseridos corretamente na tabela %' , P_NOME_TABELA;
 
 EXCEPTION
+	-- Captura qualquer tipo de erro que ocorra durante o EXECUTE.
 	WHEN OTHERS THEN
-		RAISE EXCEPTION 'Erro ao inserir dados na tabela "%": %', P_NOME_TABELA, SQLERRM;
+        -- GET STACKED DIAGNOSTICS é usado para obter informações detalhadas
+        -- sobre o erro que acabou de ocorrer, incluindo a mensagem original e o SQLSTATE.
+        GET STACKED DIAGNOSTICS
+            v_original_error_message = MESSAGE_TEXT, -- A mensagem de erro original (ex: do trigger de CPF)
+            v_original_sqlstate = RETURNED_SQLSTATE; -- O código SQLSTATE do erro original (ex: 'P0001' para RAISE EXCEPTION)
+
+        -- Verifica se o erro é especificamente aquele levantado por um RAISE EXCEPTION (SQLSTATE 'P0001'),
+        -- como o erro de CPF duplicado do seu trigger.
+        IF v_original_sqlstate = 'P0001' THEN
+            -- Se for o erro de CPF duplicado, combinamos a mensagem original do trigger
+            -- com a sua mensagem genérica da função CADASTRAR.
+            RAISE EXCEPTION 'Erro ao inserir dados na tabela "%". % Por favor, verifique os dados fornecidos.',
+                            P_NOME_TABELA, v_original_error_message;
+        ELSE
+            -- Para qualquer outro tipo de erro (ex: violação de NOT NULL, tipo de dado incorreto,
+            -- coluna inexistente, etc.), usamos apenas a mensagem genérica.
+            RAISE EXCEPTION 'Erro ao inserir dados na tabela "%". Por favor, verifique os dados fornecidos ou a estrutura da tabela.',
+                            P_NOME_TABELA;
+        END IF;
 END;
 $$
 LANGUAGE PLPGSQL;
@@ -191,5 +215,97 @@ BEGIN
 
     -- Para triggers AFTER, sempre retornamos NULL
     RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION CHECAR_CPF_UNICO_CLIENTE()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Verifica se o CPF que está sendo inserido/atualizado já existe na tabela CLIENTE
+    -- Exclui o próprio registro em caso de UPDATE para evitar falsos positivos
+    IF EXISTS (
+        SELECT 1
+        FROM CLIENTE
+        WHERE CPF = NEW.CPF
+          AND ID_CLIENTE IS DISTINCT FROM NEW.ID_CLIENTE -- Garante que não é o mesmo registro em caso de UPDATE
+    ) THEN
+        -- Se o CPF já existe, lança uma exceção e impede a operação
+        RAISE EXCEPTION 'Já existe um cliente cadastrado com o CPF %.', NEW.CPF;
+    END IF;
+
+    -- Retorna NEW para permitir que a operação de INSERT ou UPDATE continue
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION CHECAR_CPF_UNICO_FUNCIONARIO()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Verifica se o CPF que está sendo inserido/atualizado já existe na tabela FUNCIONARIO
+    -- Exclui o próprio registro em caso de UPDATE para evitar falsos positivos
+    IF EXISTS (
+        SELECT 1
+        FROM FUNCIONARIO
+        WHERE CPF = NEW.CPF
+          AND ID_FUNCIONARIO IS DISTINCT FROM NEW.ID_FUNCIONARIO -- Garante que não é o mesmo registro em caso de UPDATE
+    ) THEN
+        -- Se o CPF já existe, lança uma exceção e impede a operação
+        RAISE EXCEPTION 'Erro: Já existe um funcionário cadastrado com o CPF %.', NEW.CPF;
+    END IF;
+
+    -- Retorna NEW para permitir que a operação de INSERT ou UPDATE continue
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION CHECAR_CPF_UNICO_FORNECEDOR()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Verifica se o CNPJ que está sendo inserido/atualizado já existe na tabela FORNECEDOR
+    -- Exclui o próprio registro em caso de UPDATE para evitar falsos positivos
+    IF EXISTS (
+        SELECT 1
+        FROM FORNECEDOR
+        WHERE CNPJ = NEW.CNPJ
+          AND ID_FORNECEDOR IS DISTINCT FROM NEW.ID_FORNECEDOR -- Garante que não é o mesmo registro em caso de UPDATE
+    ) THEN
+        -- Se o CNPJ já existe, lança uma exceção e impede a operação
+        RAISE EXCEPTION 'Erro: Já existe um fornecedor cadastrado com o CNPJ %.', NEW.CNPJ;
+    END IF;
+
+    -- Retorna NEW para permitir que a operação de INSERT ou UPDATE continue
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION checar_preco_positivo_tipo_lavagem()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Verifica se PRECO_POR_KG é negativo
+    IF NEW.PRECO_POR_KG < 0 THEN
+        RAISE EXCEPTION 'O preço por KG não pode ser negativo. Valor fornecido: %.', NEW.PRECO_POR_KG;
+    END IF;
+
+    -- Verifica se PRECO_FIXO é negativo
+    IF NEW.PRECO_FIXO < 0 THEN
+        RAISE EXCEPTION 'O preço fixo não pode ser negativo. Valor fornecido: %.', NEW.PRECO_FIXO;
+    END IF;
+
+    -- Retorna NEW para permitir que a operação de INSERT ou UPDATE continue
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION verificar_qtd_estoque_positiva_produto()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Verifica se a quantidade em estoque que está sendo inserida/atualizada é negativa
+    IF NEW.QTD_ESTOQUE < 0 THEN
+        -- Se for negativa, lança uma exceção e impede a operação
+        RAISE EXCEPTION 'A quantidade em estoque não pode ser negativa. Valor fornecido: %.', NEW.QTD_ESTOQUE;
+    END IF;
+
+    -- Retorna NEW para permitir que a operação de INSERT ou UPDATE continue
+    RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
