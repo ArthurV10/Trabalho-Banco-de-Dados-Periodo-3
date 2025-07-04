@@ -551,7 +551,6 @@ $$ LANGUAGE PLPGSQL;
 --------------------------------------------------------------------------
 
 ---------- Função para tornar valores nulos ao serem deletados nas tabelas estrangeiras ----------
---------------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION VALORES_NULOS_AO_DELETAR_ATRIBUTOS_ESTRAGEIROS()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -584,6 +583,20 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 --------------------------------------------------------------------------------------------------
+
+------- Função para verificar se os status está dentro do padronizado -------
+CREATE OR REPLACE FUNCTION LIMITAR_STATUS_LAVAGEM()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.STATUS_LAVAGEM NOT IN ('EM ANDAMENTO','CONCLUIDA','CANCELADA') THEN
+        RAISE EXCEPTION 'O status fornecido está fora dos padrões. Valor fornecido: "%"', NEW.STATUS_LAVAGEM;
+    END IF;
+
+    RETURN NEW;
+END;
+$$
+LANGUAGE PLPGSQL;
+-----------------------------------------------------------------------------
 
 --------------------------------------------------------------
 --------------------------------------------------------------
