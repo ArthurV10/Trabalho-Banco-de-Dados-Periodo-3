@@ -4,7 +4,6 @@
 --------------------------------------------------------------
 --------------------------------------------------------------
 
-
 ----------- Função para cadastrar dados dentro de qualquer tabela -----------
 CREATE OR REPLACE FUNCTION CADASTRAR(
 	P_NOME_TABELA TEXT,
@@ -689,7 +688,138 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+--------------------------------------------------------------------------------------
 
+-- Função para informar sobre a elegibilidade e limites de parcelamento de uma lavagem
+CREATE OR REPLACE FUNCTION INFORMAR_PARCELAMENTO_LAVAGEM()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_valor_total DECIMAL(10,2);
+    v_max_parcelas INT;
+BEGIN
+    v_valor_total := NEW.VALOR_TOTAL_LAVAGEM;
+
+    IF v_valor_total IS NULL OR v_valor_total <= 0 THEN
+        RAISE NOTICE 'Atenção: O valor total da lavagem não é válido para parcelamento.';
+    ELSIF v_valor_total <= 50.00 THEN
+        RAISE NOTICE 'Atenção: Lavagens com valor de R$ % não são elegíveis para parcelamento (mínimo R$ 50.01).', v_valor_total;
+    ELSE
+        -- Define as regras de parcelamento
+        IF v_valor_total > 500.00 THEN
+            v_max_parcelas := 12;
+        ELSIF v_valor_total > 200.00 THEN
+            v_max_parcelas := 6;
+        ELSIF v_valor_total > 100.00 THEN
+            v_max_parcelas := 4;
+        ELSIF v_valor_total > 50.00 THEN
+            v_max_parcelas := 2;
+        END IF;
+
+        RAISE NOTICE 'Informação: Lavagem com valor de R$ % é elegível para parcelamento em até % vezes.', v_valor_total, v_max_parcelas;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE PLPGSQL;
+------------------------------------------------------------------------------------
+
+-- Função para adicionar um valor extra ao VALOR_TOTAL_LAVAGEM de uma lavagem específica
+CREATE OR REPLACE FUNCTION ADICIONAR_VALOR_EXTRA_LAVAGEM(
+    P_ID_LAVAGEM INT,
+    P_VALOR_ADICIONAL DECIMAL(10,2)
+)
+RETURNS VOID
+AS $$
+DECLARE
+    v_valor_atual DECIMAL(10,2);
+    v_novo_valor DECIMAL(10,2);
+    v_tabela_nome TEXT := 'LAVAGEM';
+    v_conjunto_atualizacao TEXT;
+    v_condicao TEXT;
+BEGIN
+    -- 1. Verificar se a lavagem existe e obter o valor total atual
+    SELECT VALOR_TOTAL_LAVAGEM INTO v_valor_atual
+    FROM LAVAGEM
+    WHERE ID_LAVAGEM = P_ID_LAVAGEM;
+
+    -- Se a lavagem não for encontrada, lança uma exceção
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Erro: Lavagem com ID % não encontrada.', P_ID_LAVAGEM;
+    END IF;
+
+    -- 2. Calcular o novo valor total
+    -- Se o valor atual for NULL, considera 0 para a soma
+    v_novo_valor := COALESCE(v_valor_atual, 0) + P_VALOR_ADICIONAL;
+
+    -- 3. Preparar os argumentos para a função ALTERAR
+    v_conjunto_atualizacao := 'VALOR_TOTAL_LAVAGEM = ' || v_novo_valor::TEXT;
+    v_condicao := 'ID_LAVAGEM = ' || P_ID_LAVAGEM::TEXT;
+
+    -- 4. Chamar a função ALTERAR para atualizar o registro da lavagem
+    PERFORM ALTERAR(v_tabela_nome, v_conjunto_atualizacao, v_condicao);
+
+    RAISE NOTICE 'Valor de R$ % adicionado com sucesso à lavagem ID %.', P_VALOR_ADICIONAL, P_ID_LAVAGEM;
+    RAISE NOTICE 'Novo VALOR_TOTAL_LAVAGEM para lavagem ID % é R$ %.', P_ID_LAVAGEM, v_novo_valor;
+
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE EXCEPTION 'Erro ao adicionar valor extra à lavagem ID %: %', P_ID_LAVAGEM, SQLERRM;
+END;
+$$
+LANGUAGE PLPGSQL;
+---------------------------------------------------------------------------------------------------
+
+-- Função para remover um valor do VALOR_TOTAL_LAVAGEM de uma lavagem específica
+CREATE OR REPLACE FUNCTION REMOVER_VALOR_EXTRA_LAVAGEM(
+    P_ID_LAVAGEM INT,
+    P_VALOR_REMOVER DECIMAL(10,2)
+)
+RETURNS VOID
+AS $$
+DECLARE
+    v_valor_atual DECIMAL(10,2);
+    v_novo_valor DECIMAL(10,2);
+    v_tabela_nome TEXT := 'LAVAGEM';
+    v_conjunto_atualizacao TEXT;
+    v_condicao TEXT;
+BEGIN
+    -- 1. Verificar se a lavagem existe e obter o valor total atual
+    SELECT VALOR_TOTAL_LAVAGEM INTO v_valor_atual
+    FROM LAVAGEM
+    WHERE ID_LAVAGEM = P_ID_LAVAGEM;
+
+    -- Se a lavagem não for encontrada, lança uma exceção
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Erro: Lavagem com ID % não encontrada.', P_ID_LAVAGEM;
+    END IF;
+
+    -- 2. Calcular o novo valor total
+    -- Se o valor atual for NULL, considera 0 para a subtração
+    v_novo_valor := COALESCE(v_valor_atual, 0) - P_VALOR_REMOVER;
+
+    -- 3. Garantir que o valor total não seja negativo
+    IF v_novo_valor < 0 THEN
+        RAISE NOTICE 'Atenção: A remoção de R$ % do valor total da lavagem ID % resultaria em um valor negativo (R$ %). O VALOR_TOTAL_LAVAGEM foi ajustado para R$ 0.00.',
+                     P_VALOR_REMOVER, P_ID_LAVAGEM, v_novo_valor;
+        v_novo_valor := 0;
+    END IF;
+
+    -- 4. Preparar os argumentos para a função ALTERAR
+    v_conjunto_atualizacao := 'VALOR_TOTAL_LAVAGEM = ' || v_novo_valor::TEXT;
+    v_condicao := 'ID_LAVAGEM = ' || P_ID_LAVAGEM::TEXT;
+
+    -- 5. Chamar a função ALTERAR para atualizar o registro da lavagem
+    PERFORM ALTERAR(v_tabela_nome, v_conjunto_atualizacao, v_condicao);
+
+    RAISE NOTICE 'Valor de R$ % removido com sucesso da lavagem ID %.', P_VALOR_REMOVER, P_ID_LAVAGEM;
+    RAISE NOTICE 'Novo VALOR_TOTAL_LAVAGEM para lavagem ID % é R$ %.', P_ID_LAVAGEM, v_novo_valor;
+
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE EXCEPTION 'Erro ao remover valor extra da lavagem ID %: %', P_ID_LAVAGEM, SQLERRM;
+END;
+$$
+LANGUAGE PLPGSQL;
 --------------------------------------------------------------
 --------------------------------------------------------------
 --------------------------------------------------------------
@@ -796,8 +926,21 @@ BEGIN
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
+--------------------------------------------------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
 
 
+
+
+
+
+
+
+
+---------------------|| FUNÇÕES PARCELA ||--------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION ATUALIZAR_STATUS_PARCELAS()
 RETURNS VOID AS $$
@@ -813,8 +956,123 @@ BEGIN
 END;
 $$
 LANGUAGE PLPGSQL;
---------------------------------------------------------------
---------------------------------------------------------------
+
+-- Função para setar fk_parcela_lavagem como NULL na tabela PARCELA
+-- quando um registro correspondente é deletado da tabela LAVAGEM.
+CREATE OR REPLACE FUNCTION DELETAR_LAVAGEM_SETAR_NULO_FK_PARCELA()
+RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE PARCELA
+    SET fk_parcela_lavagem = NULL
+    WHERE fk_parcela_lavagem = OLD.ID_LAVAGEM;
+
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+-----------------------------------------------------------------
+
+-- Função para verificar se NUM_PARCELA é um valor positivo.
+CREATE OR REPLACE FUNCTION VERIFICAR_NUM_PARCELA_POSITIVO()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.NUM_PARCELA < 0 THEN
+        RAISE EXCEPTION 'O número da parcela não pode ser negativo. Valor fornecido: %', NEW.NUM_PARCELA;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+------------------------------------------------------------
+
+-- Função para verificar se VALOR_PARCELA é um valor positivo.
+CREATE OR REPLACE FUNCTION VERIFICAR_VALOR_PARCELA_POSITIVO()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.VALOR_PARCELA < 0 THEN
+        RAISE EXCEPTION 'O valor da parcela não pode ser negativo. Valor fornecido: %', NEW.VALOR_PARCELA;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 --------------------------------------------------------------
 
+-- Função para verificar se DT_VENCIMENTO não é anterior à data atual.
+CREATE OR REPLACE FUNCTION VERIFICAR_DT_VENCIMENTO_FUTURA()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.DT_VENCIMENTO IS NOT NULL AND NEW.DT_VENCIMENTO < CURRENT_DATE THEN
+        RAISE EXCEPTION 'Erro: A data de vencimento (%) não pode ser anterior à data atual (%).',
+                        NEW.DT_VENCIMENTO, CURRENT_DATE;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+------------------------------------------------------------------------
+
+-- Função para verificar se STATUS_PARCELA está entre os valores permitidos.
+CREATE OR REPLACE FUNCTION VERIFICAR_STATUS_PARCELA()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.STATUS_PARCELA NOT IN ('PAGO','PENDENTE','ATRASADO') THEN
+        RAISE EXCEPTION 'Erro: O status da parcela está fora dos padrões. Valor fornecido: "%"', NEW.STATUS_PARCELA;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+----------------------------------------------------------------------------
+
+-- Função para validar o número de parcelas ao inserir/atualizar uma PARCELA
+CREATE OR REPLACE FUNCTION VALIDAR_NUM_PARCELAS_PARCELA()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_valor_total_lavagem DECIMAL(10,2);
+    v_max_parcelas INT;
+BEGIN
+    -- Obtém o valor total da lavagem associada
+    SELECT VALOR_TOTAL_LAVAGEM INTO v_valor_total_lavagem
+    FROM LAVAGEM
+    WHERE ID_LAVAGEM = NEW.fk_parcela_lavagem;
+
+    -- Se não houver lavagem associada ou valor total for nulo/inválido
+    IF v_valor_total_lavagem IS NULL OR v_valor_total_lavagem <= 0 THEN
+        RAISE NOTICE 'Atenção: Não foi possível validar o número de parcelas para a lavagem % devido ao valor total inválido.', NEW.fk_parcela_lavagem;
+        RETURN NEW; -- Permite a operação, mas com uma nota de atenção
+    END IF;
+
+    -- *** NOVA LÓGICA AQUI: Permite 1 parcela (à vista) sempre ***
+    IF NEW.NUM_PARCELA = 1 THEN
+        RETURN NEW; -- Se for 1 parcela, sempre permite e sai da função.
+    END IF;
+
+    -- Define as regras de parcelamento para mais de 1 parcela
+    -- Se o valor total for <= 50.00 e NUM_PARCELA > 1, lança exceção
+    IF v_valor_total_lavagem <= 50.00 THEN
+        RAISE EXCEPTION 'Erro: Lavagens com valor de R$ % não são elegíveis para parcelamento em mais de uma vez.', v_valor_total_lavagem;
+    ELSIF v_valor_total_lavagem > 500.00 THEN
+        v_max_parcelas := 12;
+    ELSIF v_valor_total_lavagem > 200.00 THEN
+        v_max_parcelas := 6;
+    ELSIF v_valor_total_lavagem > 100.00 THEN
+        v_max_parcelas := 4;
+    ELSIF v_valor_total_lavagem > 50.00 THEN
+        v_max_parcelas := 2;
+    END IF;
+
+    -- Verifica se o número de parcelas desejado excede o limite (apenas para NUM_PARCELA > 1)
+    IF NEW.NUM_PARCELA > v_max_parcelas THEN
+        RAISE EXCEPTION 'Erro: O número de parcelas desejado (%) excede o limite para o valor total da lavagem (R$ %). O máximo permitido é % parcelas.',
+                        NEW.NUM_PARCELA, v_valor_total_lavagem, v_max_parcelas;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE PLPGSQL;
+
+--------------------------------------------------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
 

@@ -269,6 +269,13 @@ CREATE OR REPLACE TRIGGER trg_verificar_datas_lavagem
 BEFORE INSERT OR UPDATE ON lavagem
 FOR EACH ROW
 EXECUTE FUNCTION verificar_consistencia_datas_lavagem();
+
+-- Trigger na tabela LAVAGEM para informar sobre parcelamento
+CREATE OR REPLACE TRIGGER TRG_INFORMAR_PARCELAMENTO_LAVAGEM
+AFTER INSERT OR UPDATE ON LAVAGEM
+FOR EACH ROW
+EXECUTE FUNCTION INFORMAR_PARCELAMENTO_LAVAGEM();
+
 --------------------------------------------------------------
 --------------------------------------------------------------
 --------------------------------------------------------------
@@ -346,6 +353,47 @@ AFTER INSERT OR UPDATE OR DELETE ON PARCELA
 FOR EACH ROW
 EXECUTE FUNCTION trg_auditoria_generica();
 
+-- Trigger para tornar nulo as FK que forem apagadas
+CREATE OR REPLACE TRIGGER TR_DELETAR_LAVAGEM_SETAR_NULO_FK_PARCELA
+BEFORE DELETE ON LAVAGEM
+FOR EACH ROW
+EXECUTE FUNCTION DELETAR_LAVAGEM_SETAR_NULO_FK_PARCELA();
+
+-- Trigger para não permitir valores negativos em NUM_PARCELA
+CREATE OR REPLACE TRIGGER TR_VERIFICAR_NUM_PARCELA_POSITIVO
+BEFORE INSERT OR UPDATE ON PARCELA
+FOR EACH ROW
+EXECUTE FUNCTION VERIFICAR_NUM_PARCELA_POSITIVO();
+
+-- Trigger para não permitir valores negativos em VALOR_PARCELA
+CREATE OR REPLACE TRIGGER TR_VERIFICAR_VALOR_PARCELA_POSITIVO
+BEFORE INSERT OR UPDATE ON PARCELA
+FOR EACH ROW
+EXECUTE FUNCTION VERIFICAR_VALOR_PARCELA_POSITIVO();
+
+-- Trigger para não permitir o dt_vencimento antes da data atual
+CREATE OR REPLACE TRIGGER TR_VERIFICAR_DT_VENCIMENTO_FUTURA
+BEFORE INSERT OR UPDATE ON PARCELA
+FOR EACH ROW
+EXECUTE FUNCTION VERIFICAR_DT_VENCIMENTO_FUTURA();
+
+-- Trigger para valor de status está dentro do padronizado
+CREATE OR REPLACE TRIGGER TR_VERIFICAR_STATUS_PARCELA
+BEFORE INSERT OR UPDATE ON PARCELA
+FOR EACH ROW
+EXECUTE FUNCTION VERIFICAR_STATUS_PARCELA();
+
+-- Trigger para atualizar automaticamente as parcelas caso passe da data
+CREATE OR REPLACE TRIGGER trg_atualizar_status_parcelas_agendado
+AFTER INSERT OR UPDATE OR DELETE ON PARCELA
+FOR EACH STATEMENT
+EXECUTE FUNCTION ATUALIZAR_STATUS_PARCELAS();
+
+-- Trigger na tabela LAVAGEM para informar sobre parcelamento
+CREATE OR REPLACE TRIGGER TRG_INFORMAR_PARCELAMENTO_LAVAGEM
+AFTER INSERT OR UPDATE ON LAVAGEM
+FOR EACH ROW
+EXECUTE FUNCTION INFORMAR_PARCELAMENTO_LAVAGEM();
 --------------------------------------------------------------
 --------------------------------------------------------------
 --------------------------------------------------------------
