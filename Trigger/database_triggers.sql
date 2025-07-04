@@ -80,6 +80,12 @@ CREATE OR REPLACE TRIGGER trg_checar_preco_positivo_tipo_lavagem
 BEFORE INSERT OR UPDATE ON TIPO_LAVAGEM
 FOR EACH ROW
 EXECUTE FUNCTION checar_preco_positivo_tipo_lavagem();
+
+-- Trigger para verificar se dt_prev e real são inferior a dt_entrada --
+CREATE OR REPLACE TRIGGER trg_verificar_data_inferior_entrada
+BEFORE INSERT OR UPDATE ON LAVAGEM
+FOR EACH ROW	
+EXECUTE FUNCTION VERIFICAR_DATA_INFERIOR_ENTRADA();
 --------------------------------------------------------------
 --------------------------------------------------------------
 --------------------------------------------------------------
@@ -175,11 +181,11 @@ EXECUTE FUNCTION verificar_qtd_estoque_positiva_produto();
 -- Trigger para a tabela COMPRA
 CREATE OR REPLACE TRIGGER tr_auditar_compra
 AFTER INSERT OR UPDATE OR DELETE ON COMPRA
-FOR EACH ROW
+FOR EACH ROW	
 EXECUTE FUNCTION trg_auditoria_generica();
 
 -- Trigger para colocar nulo a FK na tabela compra referente ao fornecedor --
-CREATE TRIGGER trg_deletar_forncedor_e_deixar_fk_nulo_compra
+CREATE OR REPLACE TRIGGER trg_deletar_forncedor_e_deixar_fk_nulo_compra
 BEFORE DELETE ON FORNECEDOR
 FOR EACH ROW
 EXECUTE FUNCTION DELETAR_FORNECEDOR_E_DEIXAR_FK_NULO_COMPRA();
@@ -195,6 +201,12 @@ CREATE OR REPLACE TRIGGER trg_verificar_valor_negativo_compra
 BEFORE INSERT OR UPDATE ON COMPRA
 FOR EACH ROW
 EXECUTE FUNCTION checar_preco_positivo_compra();
+
+-- Trigger para controlar a quantidade do estoque ----
+CREATE OR REPLACE TRIGGER trg_adicionar_estoque_apos_entrega
+AFTER UPDATE ON compra
+FOR EACH ROW
+EXECUTE FUNCTION trg_fun_adicionar_estoque_compra();
 --------------------------------------------------------------
 --------------------------------------------------------------
 --------------------------------------------------------------
@@ -217,7 +229,7 @@ FOR EACH ROW
 EXECUTE FUNCTION trg_auditoria_generica();
 
 -- Trigger para garantir tempos reais na tabela de Lavagem -- 
-CREATE TRIGGER trg_verificar_datas_lavagem
+CREATE OR REPLACE TRIGGER trg_verificar_datas_lavagem
 BEFORE INSERT OR UPDATE ON lavagem 
 FOR EACH ROW 
 EXECUTE FUNCTION verificar_consistencia_datas_lavagem(); 
@@ -251,6 +263,12 @@ CREATE OR REPLACE TRIGGER trg_limitar_status_lavagem
 BEFORE INSERT OR UPDATE ON LAVAGEM
 FOR EACH ROW
 EXECUTE FUNCTION LIMITAR_STATUS_LAVAGEM();
+
+-- Trigger para verificar se status da lavagem está de acordo com a data--
+CREATE OR REPLACE TRIGGER trg_verificar_datas_lavagem
+BEFORE INSERT OR UPDATE ON lavagem
+FOR EACH ROW
+EXECUTE FUNCTION verificar_consistencia_datas_lavagem();
 --------------------------------------------------------------
 --------------------------------------------------------------
 --------------------------------------------------------------
@@ -348,6 +366,11 @@ CREATE OR REPLACE TRIGGER tr_audistar_lavagem_produto
 AFTER INSERT OR UPDATE OR DELETE ON LAVAGEM_PRODUTO
 FOR EACH ROW
 EXECUTE FUNCTION trg_auditoria_generica();
+
+CREATE OR REPLACE TRIGGER trg_subtrair_estoque_apos_uso
+AFTER INSERT ON lavagem_produto
+FOR EACH ROW
+EXECUTE FUNCTION trg_fun_subtrair_estoque_produto();
 --------------------------------------------------------------
 --------------------------------------------------------------
 --------------------------------------------------------------

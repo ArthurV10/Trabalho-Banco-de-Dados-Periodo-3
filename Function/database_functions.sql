@@ -334,6 +334,19 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+
+-------- Função para subtrair ao estoque do produto ----------------------
+CREATE OR REPLACE FUNCTION trg_fun_subtrair_estoque_produto()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Subtrai a quantidade utilizada (que deve ser informada na unidade base) do estoque do produto.
+    UPDATE produto
+    SET qtd_estoque = qtd_estoque - NEW.qtd_utilizada
+    WHERE id_produto = NEW.fk_lavagem_produto_produto;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 --------------------------------------------------------------
 --------------------------------------------------------------
 --------------------------------------------------------------
@@ -391,6 +404,32 @@ END;
 $$ LANGUAGE plpgsql;
 ------------------------------------------------------------------------
 
+-------- Função para adicionar ao estoque do produto ----------------------
+CREATE OR REPLACE FUNCTION trg_fun_adicionar_estoque_compra()
+RETURNS TRIGGER AS $$
+DECLARE
+    item_da_compra RECORD;
+BEGIN
+    -- O gatilho só executa se o status da compra MUDOU para 'ENTREGUE'
+    IF NEW.status_compra = 'ENTREGUE' AND OLD.status_compra <> 'ENTREGUE' THEN
+
+        -- Percorre cada item da compra que foi entregue
+        FOR item_da_compra IN SELECT * FROM item WHERE fk_item_compra = NEW.id_compra LOOP
+
+            -- Adiciona a quantidade do item comprado ao estoque do produto
+            UPDATE produto
+            SET qtd_estoque = qtd_estoque + (item_da_compra.qtd_item * produto.fator_conversao)
+            WHERE id_produto = item_da_compra.fk_item_produto;
+
+        END LOOP;
+
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+------------------------------------------------------------------------
+
 --------------------------------------------------------------
 --------------------------------------------------------------
 --------------------------------------------------------------
@@ -420,6 +459,7 @@ END;
 $$
 LANGUAGE PLPGSQL;
 
+-------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION DELETAR_PRODUTO_SETAR_NULO_FK_ITEM()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -432,6 +472,7 @@ END;
 $$
 LANGUAGE PLPGSQL;
 
+-------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION checar_qtd_positivo_item()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -443,6 +484,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION checar_valor_unitario_positivo_item()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -454,6 +496,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION calcular_valor_total_item()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -516,9 +559,10 @@ CREATE OR REPLACE FUNCTION CADASTRAR_LAVAGEM(
     p_tipo_pagamento_nome VARCHAR,
     p_dt_prev_entrega TIMESTAMP,
     p_status_lavagem VARCHAR,
-    p_observacoes TEXT
+    p_observacoes TEXT,
+    p_dt_real_entrega TIMESTAMP DEFAULT NULL -- NOVO PARÂMETRO OPCIONAL
 )
-RETURNS INT AS $$ -- Retorna o ID da lavagem criada
+RETURNS INT AS $$
 DECLARE
     v_cliente_id INT;
     v_funcionario_id INT;
@@ -526,7 +570,7 @@ DECLARE
     v_tipo_pagamento_id INT;
     v_nova_lavagem_id INT;
 BEGIN
-    -- Busca os IDs com base nos dados fornecidos, com validação
+    -- Busca os IDs com base nos dados fornecidos
     SELECT id_cliente INTO v_cliente_id FROM cliente WHERE cpf = p_cliente_cpf;
     IF NOT FOUND THEN RAISE EXCEPTION 'Cliente com CPF "%" não encontrado.', p_cliente_cpf; END IF;
 
@@ -539,15 +583,16 @@ BEGIN
     SELECT id_tipo_pagamento INTO v_tipo_pagamento_id FROM tipo_pagamento WHERE nome = p_tipo_pagamento_nome;
     IF NOT FOUND THEN RAISE EXCEPTION 'Tipo de Pagamento com o nome "%" não encontrado.', p_tipo_pagamento_nome; END IF;
 
-    -- Insere na tabela lavagem usando os IDs encontrados
-    INSERT INTO lavagem (fk_lavagem_cliente, fk_lavagem_funcionario, fk_lavagem_tipo, fk_lavagem_pagamento, dt_prev_entrega, status_lavagem, observacoes) 
-    VALUES (v_cliente_id, v_funcionario_id, v_tipo_lavagem_id, v_tipo_pagamento_id, p_dt_prev_entrega, p_status_lavagem, p_observacoes) 
+    -- Insere na tabela lavagem, agora incluindo a data de entrega real
+    INSERT INTO lavagem (fk_lavagem_cliente, fk_lavagem_funcionario, fk_lavagem_tipo, fk_lavagem_pagamento, dt_prev_entrega, status_lavagem, observacoes, dt_real_entrega) 
+    VALUES (v_cliente_id, v_funcionario_id, v_tipo_lavagem_id, v_tipo_pagamento_id, p_dt_prev_entrega, p_status_lavagem, p_observacoes, p_dt_real_entrega) 
     RETURNING id_lavagem INTO v_nova_lavagem_id;
 
     RAISE NOTICE 'Lavagem de ID % cadastrada com sucesso.', v_nova_lavagem_id;
     RETURN v_nova_lavagem_id;
 END;
 $$ LANGUAGE PLPGSQL;
+
 --------------------------------------------------------------------------
 
 ---------- Função para tornar valores nulos ao serem deletados nas tabelas estrangeiras ----------
@@ -591,12 +636,59 @@ BEGIN
     IF NEW.STATUS_LAVAGEM NOT IN ('EM ANDAMENTO','CONCLUIDA','CANCELADA') THEN
         RAISE EXCEPTION 'O status fornecido está fora dos padrões. Valor fornecido: "%"', NEW.STATUS_LAVAGEM;
     END IF;
-
+											
     RETURN NEW;
 END;
 $$
 LANGUAGE PLPGSQL;
 -----------------------------------------------------------------------------
+
+-------- Função para verificar se o tempo de entrega prevista e real é inferior à entrada --------
+CREATE OR REPLACE FUNCTION VERIFICAR_DATA_INFERIOR_ENTRADA()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.DT_PREV_ENTREGA IS NOT NULL AND 	NEW.DT_PREV_ENTREGA < NEW.DT_ENTRADA THEN
+        RAISE EXCEPTION 'A data de previsão de entrega (%) não pode ser anterior à data de entrada (%).',
+                        NEW.DT_PREV_ENTREGA, NEW.DT_ENTRADA;
+    END IF;
+
+    IF NEW.DT_REAL_ENTREGA IS NOT NULL AND NEW.DT_REAL_ENTREGA < NEW.DT_ENTRADA THEN
+        RAISE EXCEPTION 'A data real de entrega (%) não pode ser anterior à data de entrada (%).',
+                        NEW.DT_REAL_ENTREGA, NEW.DT_ENTRADA;
+    END IF;
+
+    RETURN NEW;
+END;
+$$
+LANGUAGE PLPGSQL;
+--------------------------------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION verificar_consistencia_datas_lavagem()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Checagem 1: A data de entrega PREVISTA não pode ser anterior à data de ENTRADA.
+    IF NEW.dt_prev_entrega IS NOT NULL AND NEW.dt_prev_entrega < NEW.dt_entrada THEN
+        RAISE EXCEPTION 'A data de entrega prevista (%) não pode ser anterior à data de entrada (%).',
+            to_char(NEW.dt_prev_entrega, 'DD/MM/YYYY HH24:MI'), 
+            to_char(NEW.dt_entrada, 'DD/MM/YYYY HH24:MI');
+    END IF;
+
+    -- Checagem 2: A data de entrega REAL não pode ser anterior à data de ENTRADA.
+    IF NEW.dt_real_entrega IS NOT NULL AND NEW.dt_real_entrega < NEW.dt_entrada THEN
+        RAISE EXCEPTION 'A data de entrega real (%) não pode ser anterior à data de entrada (%).',
+            to_char(NEW.dt_real_entrega, 'DD/MM/YYYY HH24:MI'),
+            to_char(NEW.dt_entrada, 'DD/MM/YYYY HH24:MI');
+    END IF;
+
+    -- NOVA CHECAGEM 3: Se o status for 'CONCLUIDA', a data de entrega real é obrigatória.
+    IF NEW.status_lavagem = 'CONCLUIDA' AND NEW.dt_real_entrega IS NULL THEN
+        RAISE EXCEPTION 'Uma lavagem com status "CONCLUIDA" deve ter uma data de entrega real preenchida.';
+    END IF;
+
+    -- Se todas as checagens passarem, permite que a operação (INSERT ou UPDATE) continue.
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
 --------------------------------------------------------------
 --------------------------------------------------------------
@@ -616,81 +708,96 @@ LANGUAGE PLPGSQL;
 CREATE OR REPLACE FUNCTION trg_auditoria_generica()
 RETURNS TRIGGER AS $$
 DECLARE
-    v_detalhes TEXT;
     v_id_afetado INT;
-    v_nome_old TEXT := NULL;
-    v_nome_new TEXT := NULL;
-    v_cpf_old TEXT := NULL;
-    v_cpf_new TEXT := NULL;
-    v_pk_column_name_actual TEXT; -- Variável para armazenar o nome real da coluna PK
+    v_detalhes TEXT := '';
+    r RECORD;
+    old_jsonb JSONB;
+    new_jsonb JSONB;
+    v_identificador_registro TEXT;
 BEGIN
-    -- Obter o nome real da coluna da Chave Primária para a tabela atual
-    SELECT kcu.column_name
-    INTO v_pk_column_name_actual
-    FROM information_schema.table_constraints AS tc
-    JOIN information_schema.key_column_usage AS kcu
-        ON tc.constraint_name = kcu.constraint_name
-        AND tc.table_schema = kcu.table_schema
-    WHERE tc.table_name = TG_TABLE_NAME
-      AND tc.constraint_type = 'PRIMARY KEY';
-
-    -- Tentar obter o ID do registro afetado usando o nome real da PK
+    -- Obter o ID do registro afetado (lógica mantida)
+    DECLARE
+        v_pk_column_name_actual TEXT;
     BEGIN
+        SELECT kcu.column_name INTO v_pk_column_name_actual
+        FROM information_schema.table_constraints AS tc
+        JOIN information_schema.key_column_usage AS kcu
+            ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+        WHERE tc.table_name = TG_TABLE_NAME
+          AND tc.table_schema = TG_TABLE_SCHEMA
+          AND tc.constraint_type = 'PRIMARY KEY';
+
         IF v_pk_column_name_actual IS NOT NULL THEN
             IF TG_OP = 'DELETE' THEN
                 EXECUTE 'SELECT ($1).' || quote_ident(v_pk_column_name_actual) INTO v_id_afetado USING OLD;
             ELSE
                 EXECUTE 'SELECT ($1).' || quote_ident(v_pk_column_name_actual) INTO v_id_afetado USING NEW;
             END IF;
-        ELSE
-            v_id_afetado := NULL; -- Não foi possível encontrar o nome da PK
         END IF;
     EXCEPTION
-        WHEN OTHERS THEN
-            v_id_afetado := NULL; -- Outros erros na obtenção da PK
+        WHEN OTHERS THEN v_id_afetado := NULL;
     END;
 
-    -- Tentar extrair NOME e CPF de forma genérica (se existirem nas tabelas OLD/NEW)
-    -- Usa um bloco BEGIN/EXCEPTION para lidar com tabelas que não possuem NOME/CPF
-    BEGIN
+    -- Construir a mensagem de detalhes
+    IF TG_OP = 'INSERT' OR TG_OP = 'DELETE' THEN
+        -- Tenta encontrar um campo representativo (nome, descricao, etc.) para o resumo.
+        BEGIN
+            IF TG_OP = 'INSERT' THEN
+                EXECUTE format('SELECT ($1).%I', 'nome') INTO v_identificador_registro USING NEW;
+            ELSE -- DELETE
+                EXECUTE format('SELECT ($1).%I', 'nome') INTO v_identificador_registro USING OLD;
+            END IF;
+        EXCEPTION WHEN undefined_column THEN
+            BEGIN
+                IF TG_OP = 'INSERT' THEN
+                    EXECUTE format('SELECT ($1).%I', 'descricao') INTO v_identificador_registro USING NEW;
+                ELSE -- DELETE
+                    EXECUTE format('SELECT ($1).%I', 'descricao') INTO v_identificador_registro USING OLD;
+                END IF;
+            EXCEPTION WHEN undefined_column THEN
+                v_identificador_registro := 'ID ' || COALESCE(v_id_afetado::TEXT, 'N/A');
+            END;
+        END;
+        
+        -- Monta a mensagem concisa para INSERT e DELETE
         IF TG_OP = 'INSERT' THEN
-            EXECUTE 'SELECT $1.NOME, $1.CPF FROM ' || quote_ident(TG_TABLE_NAME) || ' AS tbl'
-            INTO v_nome_new, v_cpf_new USING NEW;
-            v_detalhes := 'Novo registro em ' || TG_TABLE_NAME || ': ' || COALESCE(v_nome_new, '') || ' (CPF: ' || COALESCE(v_cpf_new, '') || ')';
-
-        ELSIF TG_OP = 'UPDATE' THEN
-            EXECUTE 'SELECT $1.NOME, $1.CPF FROM ' || quote_ident(TG_TABLE_NAME) || ' AS tbl'
-            INTO v_nome_old, v_cpf_old USING OLD;
-            EXECUTE 'SELECT $1.NOME, $1.CPF FROM ' || quote_ident(TG_TABLE_NAME) || ' AS tbl'
-            INTO v_nome_new, v_cpf_new USING NEW;
-
-            v_detalhes := 'Atualização em ' || TG_TABLE_NAME || ' (ID: ' || COALESCE(v_id_afetado::TEXT, 'N/A') || '). ' ||
-                          'Nome de "' || COALESCE(v_nome_old, 'N/A') || '" para "' || COALESCE(v_nome_new, 'N/A') || '". ' ||
-                          'CPF de "' || COALESCE(v_cpf_old, 'N/A') || '" para "' || COALESCE(v_cpf_new, 'N/A') || '".';
-
-        ELSIF TG_OP = 'DELETE' THEN
-            EXECUTE 'SELECT $1.NOME, $1.CPF FROM ' || quote_ident(TG_TABLE_NAME) || ' AS tbl'
-            INTO v_nome_old, v_cpf_old USING OLD;
-            v_detalhes := 'Registro deletado de ' || TG_TABLE_NAME || ': "' || COALESCE(v_nome_old, '') || '" (CPF: ' || COALESCE(v_cpf_old, '') || ')';
+            v_detalhes := format('Novo registro inserido: "%s"', v_identificador_registro);
+        ELSE -- DELETE
+            v_detalhes := format('Registro deletado: "%s"', v_identificador_registro);
         END IF;
 
-    EXCEPTION
-        WHEN undefined_column THEN
-            -- Fallback se as colunas NOME ou CPF não existirem na tabela
-            v_detalhes := TG_OP || ' em ' || TG_TABLE_NAME || ' (ID: ' || COALESCE(v_id_afetado::TEXT, 'N/A') || ')';
-        WHEN OTHERS THEN
-            -- Captura outros erros inesperados na extração de detalhes
-            v_detalhes := TG_OP || ' em ' || TG_TABLE_NAME || ' (ID: ' || COALESCE(v_id_afetado::TEXT, 'N/A') || ') - Erro ao obter detalhes: ' || SQLERRM;
-    END;
+    ELSIF TG_OP = 'UPDATE' THEN
+        -- Para UPDATE, mantém a lógica detalhada para detectar apenas o que mudou.
+        old_jsonb := to_jsonb(OLD);
+        new_jsonb := to_jsonb(NEW);
+        
+        FOR r IN SELECT * FROM jsonb_each_text(new_jsonb) LOOP
+            IF r.value IS DISTINCT FROM (old_jsonb ->> r.key) THEN
+                v_detalhes := v_detalhes || 
+                    format('Campo "%s" alterado de "%s" para "%s". ', 
+                           r.key, 
+                           (old_jsonb ->> r.key), 
+                           r.value
+                    );
+            END IF;
+        END LOOP;
+        
+        IF v_detalhes = '' THEN
+            v_detalhes := 'UPDATE executado sem alterações de dados.';
+        ELSE
+            v_detalhes := 'Registro atualizado. Alterações: ' || v_detalhes;
+        END IF;
+    END IF;
 
-    -- Inserir o registro na tabela de auditoria
-    INSERT INTO AUDITORIA_LOG (NOME_TABELA, OPERACAO, ID_REGISTRO_AFETADO, DETALHES)
+    -- Inserir o registro final na tabela de auditoria
+    INSERT INTO auditoria_log (nome_tabela, operacao, id_registro_afetado, detalhes)
     VALUES (TG_TABLE_NAME, TG_OP, v_id_afetado, v_detalhes);
 
-    -- Para triggers AFTER, sempre retornamos NULL
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
+
+
 
 CREATE OR REPLACE FUNCTION ATUALIZAR_STATUS_PARCELAS()
 RETURNS VOID AS $$
@@ -709,13 +816,5 @@ LANGUAGE PLPGSQL;
 --------------------------------------------------------------
 --------------------------------------------------------------
 --------------------------------------------------------------
-
-
-
-
-
-
-
-
 
 

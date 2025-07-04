@@ -1,7 +1,5 @@
-
 -- Selects para todas tabelas
 SELECT * FROM cliente;
-SELECT * FROM funcionario;
 SELECT * FROM tipo_lavagem;
 SELECT * FROM tipo_pagamento;
 SELECT * FROM fornecedor;
@@ -12,6 +10,25 @@ SELECT * FROM lavagem;
 SELECT * FROM parcela;
 SELECT * FROM lavagem_produto;
 SELECT * FROM auditoria_log;
+
+-- Script para apagar todas as tabelas do banco de dados.
+-- A opção CASCADE remove as dependências (como chaves estrangeiras) automaticamente.
+-- A opção IF EXISTS evita erros caso a tabela já tenha sido apagada.
+DROP TABLE IF EXISTS lavagem_produto CASCADE;
+DROP TABLE IF EXISTS parcela CASCADE;
+DROP TABLE IF EXISTS item CASCADE;
+DROP TABLE IF EXISTS lavagem CASCADE;
+DROP TABLE IF EXISTS compra CASCADE;
+DROP TABLE IF EXISTS cliente CASCADE;
+DROP TABLE IF EXISTS funcionario CASCADE;
+DROP TABLE IF EXISTS tipo_lavagem CASCADE;
+DROP TABLE IF EXISTS tipo_pagamento CASCADE;
+DROP TABLE IF EXISTS fornecedor CASCADE;
+DROP TABLE IF EXISTS produto CASCADE;
+DROP TABLE IF EXISTS auditoria_log CASCADE;
+
+SELECT deletar('cliente', 'id_cliente = 1');
+SELECT alterar('cliente', 'nome = ''Arthur Vieira''', 'id_cliente = 5');
 
 -- Para gerar o relatório de faturamento por método em um determinado periodo:
 SELECT * FROM relatorio_faturamento_periodo('2025-07-01', '2025-07-31');
@@ -98,3 +115,55 @@ SELECT CADASTRAR('parcela',
     'DEFAULT, 15, 1, 55.00, ''2025-07-03'', ''2025-07-03'', ''PAGO''');
 -- Consumo de produto para a lavagem 15.
 SELECT CADASTRAR('lavagem_produto', '15, 3, 0.02'); -- Alvejante Oxy
+
+
+
+
+----------------- USO DO ESTOQUE -----------------------
+
+-- Consultando o estoque atual em ml
+SELECT nome, qtd_estoque, unidade_base FROM produto WHERE id_produto = 1;
+
+-- Criando uma nova compra (ela receberá o ID 6, pois a última foi 5)
+-- O status inicial é 'PENDENTE'
+SELECT CADASTRAR('compra', 'DEFAULT, 1, ''2025-07-04'', 900.00, ''PENDENTE''');
+
+-- Adicionando 10 Litros de Sabão Líquido a essa nova compra (ID 6)
+SELECT CADASTRAR('item', 'DEFAULT, 6, 1, ''Sabão Profissional (10 Litros)'', 10.00, 90.00');
+
+-- ATENÇÃO: Este comando vai acionar o gatilho 'trg_adicionar_estoque_apos_entrega'
+-- Ele vai ler o item da compra 6 (10 Litros) e somar 10 * 1000 = 10000ml ao estoque.
+SELECT ALTERAR('compra', 'status_compra = ''ENTREGUE''', 'id_compra = 6');
+
+-- Vamos verificar o estoque novamente
+SELECT nome, qtd_estoque, unidade_base FROM produto WHERE id_produto = 1;
+
+-- ATENÇÃO: Este comando vai acionar o gatilho 'trg_subtrair_estoque_apos_uso'
+-- Ele vai subtrair 150ml do estoque do produto de ID 1.
+-- (Usando a lavagem de ID 10 como exemplo)
+SELECT CADASTRAR('lavagem_produto', '10, 1, 150.00');
+
+-- Vamos verificar o estoque pela última vez
+SELECT nome, qtd_estoque, unidade_base FROM produto WHERE id_produto = 1;
+
+SELECT 
+    nome, 
+    (qtd_estoque / fator_conversao) AS estoque_convertido,
+    unidade_medida
+FROM produto;
+
+
+---------------------------------------------------------------------------------
+
+
+
+
+
+
+SELECT * FROM lavagem ORDER BY id_lavagem ;
+-- ESTE COMANDO DEVE FALHAR
+SELECT ALTERAR(
+    'lavagem', 
+    'status_lavagem = ''CONCLUIDA''', -- Mudando o status
+    'id_lavagem = 3'
+);

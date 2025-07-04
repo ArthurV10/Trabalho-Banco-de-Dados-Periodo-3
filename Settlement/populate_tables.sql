@@ -51,14 +51,16 @@ CREATE TABLE PRODUTO (
     ID_PRODUTO SERIAL PRIMARY KEY,
     NOME VARCHAR(100) NOT NULL,
     DESCRICAO TEXT,
-    UNIDADE_MEDIDA VARCHAR(20) NOT NULL,
-    QTD_ESTOQUE DECIMAL(10,2) NOT NULL -- FIZ ESSE AQUI NÃO SER NEGATIVO -- 
+    UNIDADE_MEDIDA VARCHAR(20) NOT NULL,      -- Como o produto é vendido (ex: Litro, Kg, Unidade) - Adicionar Trigger
+    UNIDADE_BASE VARCHAR(20) NOT NULL,        -- A menor unidade de controle (ex: ml, g, unidade) - Adicionar Trigger
+    FATOR_CONVERSAO DECIMAL(10, 4) NOT NULL,  -- Quantas 'unidades_base' cabem em uma 'unidade_medida' - Adicionar Trigger
+    QTD_ESTOQUE INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE COMPRA (
     ID_COMPRA SERIAL PRIMARY KEY,
     fk_compra_fornecedor INT REFERENCES FORNECEDOR(ID_FORNECEDOR),
-    DT_COMPRA DATE NOT NULL,
+    DT_COMPRA DATE NOT NULL, -- Adicionar timestamp nesta colun a
     VALOR_TOTAL DECIMAL(10,2) NOT NULL, -- Valor não fica negativo -- 
     STATUS_COMPRA VARCHAR(50) 
 );
@@ -80,17 +82,16 @@ STORED significa que esse cálculo é feito no momento da inserção/atualizaç�
 */
 
 -------------------- LAVAGEM E FINANCEIRO --------------------
-
 CREATE TABLE LAVAGEM (
     ID_LAVAGEM SERIAL PRIMARY KEY,
-    fk_lavagem_cliente INT REFERENCES CLIENTE(ID_CLIENTE) ON DELETE SET NULL,
-    fk_lavagem_funcionario INT REFERENCES FUNCIONARIO(ID_FUNCIONARIO) ON DELETE SET NULL,
-    fk_lavagem_tipo INT REFERENCES TIPO_LAVAGEM(ID_TIPO_LAVAGEM) ON DELETE SET NULL,
-    fk_lavagem_pagamento INT REFERENCES TIPO_PAGAMENTO(ID_TIPO_PAGAMENTO) ON DELETE SET NULL,
+    fk_lavagem_cliente INT REFERENCES CLIENTE(ID_CLIENTE),
+    fk_lavagem_funcionario INT REFERENCES FUNCIONARIO(ID_FUNCIONARIO),
+    fk_lavagem_tipo INT REFERENCES TIPO_LAVAGEM(ID_TIPO_LAVAGEM),
+    fk_lavagem_pagamento INT REFERENCES TIPO_PAGAMENTO(ID_TIPO_PAGAMENTO),
     DT_ENTRADA TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     DT_PREV_ENTREGA TIMESTAMP,
     DT_REAL_ENTREGA TIMESTAMP,
-    STATUS_LAVAGEM VARCHAR(50) NOT NULL CHECK (STATUS_LAVAGEM IN ('EM ANDAMENTO','CONCLUIDA','CANCELADA')),
+    STATUS_LAVAGEM VARCHAR(50) NOT NULL,
     OBSERVACOES TEXT
 );
 
@@ -167,15 +168,15 @@ SELECT CADASTRAR('fornecedor', 'DEFAULT, ''Aroma & Cia'', ''01.234.567/0001-89''
 SELECT CADASTRAR('fornecedor', 'DEFAULT, ''Máquinas Lavanderia'', ''03.456.789/0001-01'', ''8630004444'', ''suporte@maquinaslavanderia.com'', ''Av. dos Equipamentos, 400, Teresina-PI''');
 SELECT CADASTRAR('fornecedor', 'DEFAULT, ''Embalagens Express'', ''02.345.678/0001-90'', ''8630005555'', ''contato@embalagensexpress.com'', ''Rua da Logística, 500, Teresina-PI''');
 
-SELECT CADASTRAR('produto', 'DEFAULT, ''Sabão Líquido Profissional'', ''Sabão concentrado para lavanderias'', ''Litro'', 200.00');
-SELECT CADASTRAR('produto', 'DEFAULT, ''Amaciante Perfumado'', ''Amaciante com fragrância duradoura'', ''Litro'', 150.00');
-SELECT CADASTRAR('produto', 'DEFAULT, ''Alvejante Oxy'', ''Alvejante sem cloro para brancos e coloridos'', ''Litro'', 100.00');
-SELECT CADASTRAR('produto', 'DEFAULT, ''Tira Manchas Universal'', ''Eficaz contra diversos tipos de manchas'', ''Frasco'', 75.00');
-SELECT CADASTRAR('produto', 'DEFAULT, ''Cabide Plástico Reforçado'', ''Para pendurar roupas após lavagem/passadoria'', ''Unidade'', 500.00');
-SELECT CADASTRAR('produto', 'DEFAULT, ''Saco de Embalagem Grande'', ''Para entrega de roupas lavadas'', ''Unidade'', 1000.00');
-SELECT CADASTRAR('produto', 'DEFAULT, ''Detergente Limpeza Geral'', ''Para limpeza do ambiente da lavanderia'', ''Litro'', 80.00');
+SELECT CADASTRAR('produto', 'DEFAULT, ''Sabão Líquido Profissional'', ''Sabão concentrado para lavanderias'', ''Litro'', ''ml'', 1000, 200000.00');
+SELECT CADASTRAR('produto', 'DEFAULT, ''Amaciante Perfumado'', ''Amaciante com fragrância duradoura'', ''Litro'', ''ml'', 1000, 150000.00');
+SELECT CADASTRAR('produto', 'DEFAULT, ''Alvejante Oxy'', ''Alvejante sem cloro para brancos e coloridos'', ''Litro'', ''ml'', 1000, 100000.00');
+SELECT CADASTRAR('produto', 'DEFAULT, ''Tira Manchas Universal'', ''Eficaz contra diversos tipos de manchas - frasco de 500ml'', ''Frasco'', ''ml'', 500, 37500.00');
+SELECT CADASTRAR('produto', 'DEFAULT, ''Cabide Plástico Reforçado'', ''Para pendurar roupas após lavagem/passadoria'', ''Unidade'', ''unidade'', 1, 500.00');
+SELECT CADASTRAR('produto', 'DEFAULT, ''Saco de Embalagem Grande'', ''Para entrega de roupas lavadas'', ''Unidade'', ''unidade'', 1, 1000.00');
+SELECT CADASTRAR('produto', 'DEFAULT, ''Detergente Limpeza Geral'', ''Para limpeza do ambiente da lavanderia'', ''Litro'', ''ml'', 1000, 80000.00');
 
-SELECT CADASTRAR('compra', 'DEFAULT, 1, ''2025-05-01'', 450.00, ''ENTREGUE''');
+SELECT CADASTRAR('compra', 'DEFAULT, 1	, ''2025-05-01'', 450.00, ''ENTREGUE''');
 SELECT CADASTRAR('compra', 'DEFAULT, 2, ''2025-05-10'', 300.00, ''ENTREGUE''');
 SELECT CADASTRAR('compra', 'DEFAULT, 3, ''2025-05-15'', 120.00, ''ENTREGUE''');
 SELECT CADASTRAR('compra', 'DEFAULT, 4, ''2025-05-20'', 800.00, ''PENDENTE''');
@@ -191,16 +192,16 @@ SELECT CADASTRAR('item', 'DEFAULT, 5, 6, ''Saco de Embalagem (Pacote 500)'', 2.0
 
 -- Inserção na tabela lavagem usando a função específica
 -- As datas de entrada foram fixadas para consistência nos testes dos relatórios
-SELECT CADASTRAR_LAVAGEM('111.111.111-11', '112.233.444-55', 'Lavagem Convencional (KG)', 'PIX', '2025-07-20 10:00:00', 'CONCLUIDA', 'Roupas do dia a dia, 3kg');
+SELECT CADASTRAR_LAVAGEM('111.111.111-11', '112.233.444-55', 'Lavagem Convencional (KG)', 'PIX', '2025-07-20 10:00:00', 'CONCLUIDA', 'Roupas do dia a dia, 3kg', '2025-07-19 18:00:00');
 SELECT CADASTRAR_LAVAGEM('222.222.222-22', '667.788.999-00', 'Lavagem a Seco (Peça)', 'Cartão de Crédito', '2025-07-21 11:30:00', 'EM ANDAMENTO', 'Vestido de festa (lavagem a seco)');
 SELECT CADASTRAR_LAVAGEM('333.333.333-33', '001.122.333-44', 'Lavagem Delicada (KG)', 'Cartão de Débito', '2025-07-22 09:00:00', 'EM ANDAMENTO', 'Edredom de casal e 2 fronhas');
-SELECT CADASTRAR_LAVAGEM('444.444.444-44', '112.233.444-55', 'Lavagem de Edredom (Unidade)', 'Dinheiro', '2025-07-19 14:00:00', 'CONCLUIDA', 'Cobertor de microfibra');
+SELECT CADASTRAR_LAVAGEM('444.444.444-44', '112.233.444-55', 'Lavagem de Edredom (Unidade)', 'Dinheiro', '2025-07-19 14:00:00', 'CONCLUIDA', 'Cobertor de microfibra', '2025-07-19 13:00:00');
 SELECT CADASTRAR_LAVAGEM('555.555.555-55', '667.788.999-00', 'Passadoria (Peça)', 'PIX', '2025-07-22 15:00:00', 'EM ANDAMENTO', '5 camisas sociais para passar');
-SELECT CADASTRAR_LAVAGEM('666.666.666-66', '001.122.333-44', 'Lavagem Convencional (KG)', 'Cartão de Crédito', '2025-07-18 08:00:00', 'CONCLUIDA', '7kg de roupas mistas');
+SELECT CADASTRAR_LAVAGEM('666.666.666-66', '001.122.333-44', 'Lavagem Convencional (KG)', 'Cartão de Crédito', '2025-07-18 08:00:00', 'CONCLUIDA', '7kg de roupas mistas', '2025-07-18 07:30:00');
 SELECT CADASTRAR_LAVAGEM('777.777.777-77', '445.566.777-88', 'Lavagem Delicada (KG)', 'Cartão de Débito', '2025-07-21 16:00:00', 'EM ANDAMENTO', 'Roupas delicadas de bebê, 1kg');
-SELECT CADASTRAR_LAVAGEM('111.111.111-11', '556.677.888-99', 'Limpeza de Tapete (M2)', 'Dinheiro', '2025-07-17 10:00:00', 'CONCLUIDA', 'Tapete da sala (2m x 3m)');
+SELECT CADASTRAR_LAVAGEM('111.111.111-11', '556.677.888-99', 'Limpeza de Tapete (M2)', 'Dinheiro', '2025-07-17 10:00:00', 'CONCLUIDA', 'Tapete da sala (2m x 3m)', '2025-07-17 09:00:00');
 SELECT CADASTRAR_LAVAGEM('222.222.222-22', '112.233.444-55', 'Higienização de Sofá (Unidade)', 'PIX', '2025-07-25 13:00:00', 'EM ANDAMENTO', 'Sofá de 3 lugares');
-SELECT CADASTRAR_LAVAGEM('333.333.333-33', '667.788.999-00', 'Lavagem Convencional (KG)', 'Cartão de Crédito', '2025-07-19 09:00:00', 'CONCLUIDA', '4kg de calças jeans e camisetas');
+SELECT CADASTRAR_LAVAGEM('333.333.333-33', '667.788.999-00', 'Lavagem Convencional (KG)', 'Cartão de Crédito', '2025-07-19 09:00:00', 'CONCLUIDA', '4kg de calças jeans e camisetas', '2025-07-18 20:00:00');
 
 -- Inserção na tabela parcela (usando a função genérica, o que é adequado aqui)
 SELECT CADASTRAR('parcela', 'DEFAULT, 1, 1, 30.00, ''2025-07-10'', ''2025-07-08'', ''PAGO''');
@@ -230,3 +231,7 @@ SELECT CADASTRAR('lavagem_produto', '10, 2, 0.06');
 
 SELECT deletar('auditoria_log');
 ALTER SEQUENCE auditoria_log_id_log_seq RESTART WITH 1;
+
+
+
+SELECT CADASTRAR('cliente', 'DEFAULT, ''Bruno 1Costa'', ''212.422.222-22'', ''1990-07-22'', ''86982345678'', ''bruno.costa@email.com'', ''Av. Principal, 202, Horto, Teresina-PI'', ''Apenas amaciante suave'', DEFAULT, NULL');
