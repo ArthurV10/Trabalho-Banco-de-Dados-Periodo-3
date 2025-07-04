@@ -210,18 +210,47 @@ EXECUTE FUNCTION checar_preco_positivo_compra();
 ---------------------|| TRIGGER LAVAGEM ||--------------------
 --------------------------------------------------------------
 --------------------------------------------------------------
--- Trigger para a tabela LAVAGEM
+-- Trigger para a tabela LAVAGEM --
 CREATE OR REPLACE TRIGGER tr_auditar_lavagem
 AFTER INSERT OR UPDATE OR DELETE ON LAVAGEM
 FOR EACH ROW
 EXECUTE FUNCTION trg_auditoria_generica();
 
--- Trigger para garantir tempos reais na tabela de Lavagem
+-- Trigger para garantir tempos reais na tabela de Lavagem -- 
 CREATE TRIGGER trg_verificar_datas_lavagem
 BEFORE INSERT OR UPDATE ON lavagem 
 FOR EACH ROW 
 EXECUTE FUNCTION verificar_consistencia_datas_lavagem(); 
 
+-- Trigger para CLIENTE: Dispara antes de deletar um cliente --
+CREATE OR REPLACE TRIGGER trg_on_delete_cliente_set_null_lavagem
+BEFORE DELETE ON CLIENTE
+FOR EACH ROW
+EXECUTE FUNCTION VALORES_NULOS_AO_DELETAR_ATRIBUTOS_ESTRAGEIROS();
+
+-- Trigger para FUNCIONARIO: Dispara antes de deletar um funcionário --
+CREATE OR REPLACE TRIGGER trg_on_delete_funcionario_set_null_lavagem
+BEFORE DELETE ON FUNCIONARIO
+FOR EACH ROW
+EXECUTE FUNCTION VALORES_NULOS_AO_DELETAR_ATRIBUTOS_ESTRAGEIROS();
+
+-- Trigger para TIPO_LAVAGEM: Dispara antes de deletar um tipo de lavagem -- 
+CREATE OR REPLACE TRIGGER trg_on_delete_tipo_lavagem_set_null_lavagem
+BEFORE DELETE ON TIPO_LAVAGEM
+FOR EACH ROW
+EXECUTE FUNCTION VALORES_NULOS_AO_DELETAR_ATRIBUTOS_ESTRAGEIROS();
+
+-- Trigger para TIPO_PAGAMENTO: Dispara antes de deletar um tipo de pagamento -- 
+CREATE OR REPLACE TRIGGER trg_on_delete_tipo_pagamento_set_null_lavagem
+BEFORE DELETE ON TIPO_PAGAMENTO
+FOR EACH ROW
+EXECUTE FUNCTION VALORES_NULOS_AO_DELETAR_ATRIBUTOS_ESTRAGEIROS();
+
+-- Trigger para verificar se status está dentro do padrão --
+CREATE OR REPLACE TRIGGER trg_limitar_status_lavagem
+BEFORE INSERT OR UPDATE ON LAVAGEM
+FOR EACH ROW
+EXECUTE FUNCTION LIMITAR_STATUS_LAVAGEM();
 --------------------------------------------------------------
 --------------------------------------------------------------
 --------------------------------------------------------------

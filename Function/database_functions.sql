@@ -550,6 +550,40 @@ END;
 $$ LANGUAGE PLPGSQL;
 --------------------------------------------------------------------------
 
+---------- Função para tornar valores nulos ao serem deletados nas tabelas estrangeiras ----------
+--------------------------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION VALORES_NULOS_AO_DELETAR_ATRIBUTOS_ESTRAGEIROS()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Verifica qual tabela pai disparou o trigger usando TG_TABLE_NAME
+    IF TG_TABLE_NAME = 'cliente' THEN
+        -- Se um cliente foi deletado, define fk_lavagem_cliente como NULL
+        UPDATE LAVAGEM
+        SET fk_lavagem_cliente = NULL
+        WHERE fk_lavagem_cliente = OLD.ID_CLIENTE;
+    ELSIF TG_TABLE_NAME = 'funcionario' THEN
+        -- Se um funcionário foi deletado, define fk_lavagem_funcionario como NULL
+        UPDATE LAVAGEM
+        SET fk_lavagem_funcionario = NULL
+        WHERE fk_lavagem_funcionario = OLD.ID_FUNCIONARIO;
+    ELSIF TG_TABLE_NAME = 'tipo_lavagem' THEN
+        -- Se um tipo de lavagem foi deletado, define fk_lavagem_tipo como NULL
+        UPDATE LAVAGEM
+        SET fk_lavagem_tipo = NULL
+        WHERE fk_lavagem_tipo = OLD.ID_TIPO_LAVAGEM;
+    ELSIF TG_TABLE_NAME = 'tipo_pagamento' THEN
+        -- Se um tipo de pagamento foi deletado, define fk_lavagem_pagamento como NULL
+        UPDATE LAVAGEM
+        SET fk_lavagem_pagamento = NULL
+        WHERE fk_lavagem_pagamento = OLD.ID_TIPO_PAGAMENTO;
+    END IF;
+
+    -- Para triggers BEFORE DELETE, é necessário retornar OLD para permitir que a
+    -- operação de DELETE na tabela pai continue.
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+--------------------------------------------------------------------------------------------------
 
 --------------------------------------------------------------
 --------------------------------------------------------------
