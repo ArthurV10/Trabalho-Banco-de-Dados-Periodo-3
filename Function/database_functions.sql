@@ -1,6 +1,11 @@
 -- Codigo para funções das tabelas --
 
--- Função para cadastrar dados dentro de qualquer tabela --
+---------------------|| FUNÇÕES GERAIS ||---------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+
+
+----------- Função para cadastrar dados dentro de qualquer tabela -----------
 CREATE OR REPLACE FUNCTION CADASTRAR(
 	P_NOME_TABELA TEXT,
 	P_VALORES_PARA_INSERIR TEXT
@@ -44,8 +49,10 @@ EXCEPTION
 END;
 $$
 LANGUAGE PLPGSQL;
+-----------------------------------------------------------------------------
 
--- Função para deletar todos os dados dentro de qualquer tabela --
+
+----------- Função para deletar todos os dados dentro de qualquer tabela -----------
 CREATE OR REPLACE FUNCTION DELETAR(
     P_NOME_TABELA TEXT,
     P_CONDICIONAL_DELETAR TEXT DEFAULT NULL
@@ -70,7 +77,10 @@ EXCEPTION
 END;
 $$
 LANGUAGE PLPGSQL;
+------------------------------------------------------------------------------------
 
+
+----------------- Função para Atualizar ou Mudar as coisas (Update) ----------------
 CREATE OR REPLACE FUNCTION ALTERAR(
     P_NOME_TABELA TEXT,
     P_CONJUNTO_ATUALIZACAO TEXT, 
@@ -94,6 +104,10 @@ EXCEPTION
 END;
 $$
 LANGUAGE PLPGSQL;
+------------------------------------------------------------------------------------
+
+
+------------------ Função para recontar os ID serial -------------------
 
 CREATE OR REPLACE FUNCTION RESETAR_SERIAL()
 RETURNS VOID
@@ -112,8 +126,10 @@ BEGIN
 END;
 $$
 LANGUAGE PLPGSQL;
+------------------------------------------------------------------------
 
 
+---------------- Função para limpar todas as tabelas ----------------
 CREATE OR REPLACE FUNCTION LIMPAR_TODAS_TABELAS()
 RETURNS VOID
 AS $$
@@ -138,7 +154,418 @@ EXCEPTION
 END;
 $$
 LANGUAGE PLPGSQL;
+---------------------------------------------------------------------
 
+------------ Função para não permitir numeros nos nomes ------------
+CREATE OR REPLACE FUNCTION NOMES_NAO_NUMEROS()
+RETURNS TRIGGER AS $$
+BEGIN
+	IF NEW.NOME ~ '.*\d.*' THEN
+		RAISE EXCEPTION 'Não é permitido números dentro do nome. Valor fornecido: "%".', NEW.NOME;
+	END IF;
+
+    -- Retorna NEW para permitir que a operação de INSERT ou UPDATE continue
+	RETURN NEW;
+END;
+$$
+LANGUAGE PLPGSQL;
+--------------------------------------------------------------------
+
+
+--------------------------------------------------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+--------------------|| FUNÇÕES CLIENTE ||---------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+CREATE OR REPLACE FUNCTION CHECAR_CPF_UNICO_CLIENTE()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Verifica se o CPF que está sendo inserido/atualizado já existe na tabela CLIENTE
+    -- Exclui o próprio registro em caso de UPDATE para evitar falsos positivos
+    IF EXISTS (
+        SELECT 1
+        FROM CLIENTE
+        WHERE CPF = NEW.CPF
+          AND ID_CLIENTE IS DISTINCT FROM NEW.ID_CLIENTE -- Garante que não é o mesmo registro em caso de UPDATE
+    ) THEN
+        -- Se o CPF já existe, lança uma exceção e impede a operação
+        RAISE EXCEPTION 'Já existe um cliente cadastrado com o CPF %.', NEW.CPF;
+    END IF;
+
+    -- Retorna NEW para permitir que a operação de INSERT ou UPDATE continue
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+--------------------------------------------------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+-------------------|| FUNÇÕES FUNCIONARIO ||------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+CREATE OR REPLACE FUNCTION CHECAR_CPF_UNICO_FUNCIONARIO()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Verifica se o CPF que está sendo inserido/atualizado já existe na tabela FUNCIONARIO
+    -- Exclui o próprio registro em caso de UPDATE para evitar falsos positivos
+    IF EXISTS (
+        SELECT 1
+        FROM FUNCIONARIO
+        WHERE CPF = NEW.CPF
+          AND ID_FUNCIONARIO IS DISTINCT FROM NEW.ID_FUNCIONARIO -- Garante que não é o mesmo registro em caso de UPDATE
+    ) THEN
+        -- Se o CPF já existe, lança uma exceção e impede a operação
+        RAISE EXCEPTION 'Erro: Já existe um funcionário cadastrado com o CPF %.', NEW.CPF;
+    END IF;
+
+    -- Retorna NEW para permitir que a operação de INSERT ou UPDATE continue
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+--------------------------------------------------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+------------------|| FUNÇÕES TIPO LAVAGEM ||------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+CREATE OR REPLACE FUNCTION checar_preco_positivo_tipo_lavagem()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Verifica se PRECO_POR_KG é negativo
+    IF NEW.PRECO_POR_KG < 0 THEN
+        RAISE EXCEPTION 'O preço por KG não pode ser negativo. Valor fornecido: %.', NEW.PRECO_POR_KG;
+    END IF;
+
+    -- Verifica se PRECO_FIXO é negativo
+    IF NEW.PRECO_FIXO < 0 THEN
+        RAISE EXCEPTION 'O preço fixo não pode ser negativo. Valor fornecido: %.', NEW.PRECO_FIXO;
+    END IF;
+
+    -- Retorna NEW para permitir que a operação de INSERT ou UPDATE continue
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+--------------------------------------------------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+-------------------|| FUNÇÕES FORNECEDOR ||-------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+CREATE OR REPLACE FUNCTION CHECAR_CNPJ_UNICO_FORNECEDOR()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Verifica se o CNPJ que está sendo inserido/atualizado já existe na tabela FORNECEDOR
+    -- Exclui o próprio registro em caso de UPDATE para evitar falsos positivos
+    IF EXISTS (
+        SELECT 1
+        FROM FORNECEDOR
+        WHERE CNPJ = NEW.CNPJ
+          AND ID_FORNECEDOR IS DISTINCT FROM NEW.ID_FORNECEDOR -- Garante que não é o mesmo registro em caso de UPDATE
+    ) THEN
+        -- Se o CNPJ já existe, lança uma exceção e impede a operação
+        RAISE EXCEPTION 'Erro: Já existe um fornecedor cadastrado com o CNPJ %.', NEW.CNPJ;
+    END IF;
+
+    -- Retorna NEW para permitir que a operação de INSERT ou UPDATE continue
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+--------------------------------------------------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+---------------------|| FUNÇÕES PRODUTO ||--------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+CREATE OR REPLACE FUNCTION verificar_qtd_estoque_positiva_produto()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Verifica se a quantidade em estoque que está sendo inserida/atualizada é negativa
+    IF NEW.QTD_ESTOQUE < 0 THEN
+        -- Se for negativa, lança uma exceção e impede a operação
+        RAISE EXCEPTION 'A quantidade em estoque não pode ser negativa. Valor fornecido: %.', NEW.QTD_ESTOQUE;
+    END IF;
+
+    -- Retorna NEW para permitir que a operação de INSERT ou UPDATE continue
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+--------------------------------------------------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+---------------------|| FUNÇÕES COMPRA ||---------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+
+-------- Função para tornar FK nula ao fornecedor ser deletado --------
+CREATE OR REPLACE FUNCTION DELETAR_FORNECEDOR_E_DEIXAR_FK_NULO_COMPRA()
+RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE COMPRA
+    SET fk_compra_fornecedor = NULL
+    WHERE fk_compra_fornecedor = OLD.ID_FORNECEDOR;
+
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+-----------------------------------------------------------------------
+
+-------- Função para limitar palavras usadas no atributo status --------
+CREATE OR REPLACE FUNCTION LIMITAR_VALORES_STATUS_COMPRA()
+RETURNS TRIGGER AS $$
+BEGIN
+	IF NEW.STATUS_COMPRA NOT IN ('PENDENTE','ENTREGUE','CANCELADA') THEN
+		RAISE EXCEPTION 'A definição de Status da compra está diferente do padronizado. Valor fornecido: "%"', NEW.STATUS_COMPRA;
+	END IF;
+
+    RETURN NEW;
+END;
+$$
+LANGUAGE PLPGSQL;
+------------------------------------------------------------------------
+
+-------- Função para limitar palavras usadas no atributo status --------
+CREATE OR REPLACE FUNCTION checar_preco_positivo_compra()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Verifica se PRECO_POR_KG é negativo
+    IF NEW.VALOR_TOTAL < 0 THEN
+        RAISE EXCEPTION 'O valor total não pode ser negativo. Valor fornecido: %.', NEW.VALOR_TOTAL;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+------------------------------------------------------------------------
+
+--------------------------------------------------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+----------------------|| FUNÇÕES ITEM ||----------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+-- Função para quando deletar COMPRA, setar valor nulo --
+CREATE OR REPLACE FUNCTION DELETAR_COMPRA_SETAR_NULO_FK_ITEM()
+RETURNS TRIGGER AS $$
+BEGIN
+
+    UPDATE ITEM
+    SET fk_item_compra = NULL
+    WHERE fk_item_compra = OLD.ID_COMPRA;
+
+    RETURN OLD;
+END;
+$$
+LANGUAGE PLPGSQL;
+
+CREATE OR REPLACE FUNCTION DELETAR_PRODUTO_SETAR_NULO_FK_ITEM()
+RETURNS TRIGGER AS $$
+BEGIN
+
+    UPDATE ITEM
+    SET fk_item_produto = NULL
+    WHERE fk_item_produto = OLD.ID_PRODUTO;
+    RETURN OLD;
+END;
+$$
+LANGUAGE PLPGSQL;
+
+CREATE OR REPLACE FUNCTION checar_qtd_positivo_item()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.QTD_ITEM < 0 THEN
+        RAISE EXCEPTION 'A quantidade de item não pode ser negativo. Valor fornecido: %.', NEW.QTD_ITEM;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION checar_valor_unitario_positivo_item()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.VALOR_UNITARIO < 0 THEN
+        RAISE EXCEPTION 'O valor unitário não pode ser negativo. Valor fornecido: %.', NEW.QTD_ITEM;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION calcular_valor_total_item()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.QTD_ITEM IS NOT NULL AND NEW.VALOR_UNITARIO IS NOT NULL THEN
+        NEW.VALOR_TOTAL = NEW.QTD_ITEM * NEW.VALOR_UNITARIO;
+    ELSE
+        NEW.VALOR_TOTAL = 0; 
+    END IF;
+
+    RETURN NEW;
+END;
+$$
+LANGUAGE PLPGSQL;
+--------------------------------------------------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+---------------------|| FUNÇÕES LAVAGEM ||--------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+
+----------- Função para garantir consistencia dos dados -----------
+CREATE OR REPLACE FUNCTION verificar_consistencia_datas_lavagem()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Checagem 1: A data de entrega PREVISTA não pode ser anterior à data de ENTRADA.
+    IF NEW.dt_prev_entrega IS NOT NULL AND NEW.dt_prev_entrega < NEW.dt_entrada THEN
+        RAISE EXCEPTION 'A data de entrega prevista (%) não pode ser anterior à data de entrada (%).',
+            to_char(NEW.dt_prev_entrega, 'DD/MM/YYYY'), 
+            to_char(NEW.dt_entrada, 'DD/MM/YYYY');
+    END IF;
+
+    -- Checagem 2: A data de entrega REAL não pode ser anterior à data de ENTRADA.
+    -- (Só checa se a dt_real_entrega não for nula)
+    IF NEW.dt_real_entrega IS NOT NULL AND NEW.dt_real_entrega < NEW.dt_entrada THEN
+        RAISE EXCEPTION 'A data de entrega real (%) não pode ser anterior à data de entrada (%).',
+            to_char(NEW.dt_real_entrega, 'DD/MM/YYYY'),
+            to_char(NEW.dt_entrada, 'DD/MM/YYYY');
+    END IF;
+
+    -- Se todas as checagens passarem, permite que a operação (INSERT ou UPDATE) continue.
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+-------------------------------------------------------------------
+
+----- Função para realizar cadastra na tabela lavagem de forma ideal -----
+CREATE OR REPLACE FUNCTION CADASTRAR_LAVAGEM(
+    p_cliente_cpf VARCHAR,
+    p_funcionario_cpf VARCHAR,
+    p_tipo_lavagem_descricao VARCHAR,
+    p_tipo_pagamento_nome VARCHAR,
+    p_dt_prev_entrega TIMESTAMP,
+    p_status_lavagem VARCHAR,
+    p_observacoes TEXT
+)
+RETURNS INT AS $$ -- Retorna o ID da lavagem criada
+DECLARE
+    v_cliente_id INT;
+    v_funcionario_id INT;
+    v_tipo_lavagem_id INT;
+    v_tipo_pagamento_id INT;
+    v_nova_lavagem_id INT;
+BEGIN
+    -- Busca os IDs com base nos dados fornecidos, com validação
+    SELECT id_cliente INTO v_cliente_id FROM cliente WHERE cpf = p_cliente_cpf;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Cliente com CPF "%" não encontrado.', p_cliente_cpf; END IF;
+
+    SELECT id_funcionario INTO v_funcionario_id FROM funcionario WHERE cpf = p_funcionario_cpf;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Funcionário com CPF "%" não encontrado.', p_funcionario_cpf; END IF;
+
+    SELECT id_tipo_lavagem INTO v_tipo_lavagem_id FROM tipo_lavagem WHERE descricao = p_tipo_lavagem_descricao;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Tipo de Lavagem com a descrição "%" não encontrado.', p_tipo_lavagem_descricao; END IF;
+
+    SELECT id_tipo_pagamento INTO v_tipo_pagamento_id FROM tipo_pagamento WHERE nome = p_tipo_pagamento_nome;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Tipo de Pagamento com o nome "%" não encontrado.', p_tipo_pagamento_nome; END IF;
+
+    -- Insere na tabela lavagem usando os IDs encontrados
+    INSERT INTO lavagem (fk_lavagem_cliente, fk_lavagem_funcionario, fk_lavagem_tipo, fk_lavagem_pagamento, dt_prev_entrega, status_lavagem, observacoes) 
+    VALUES (v_cliente_id, v_funcionario_id, v_tipo_lavagem_id, v_tipo_pagamento_id, p_dt_prev_entrega, p_status_lavagem, p_observacoes) 
+    RETURNING id_lavagem INTO v_nova_lavagem_id;
+
+    RAISE NOTICE 'Lavagem de ID % cadastrada com sucesso.', v_nova_lavagem_id;
+    RETURN v_nova_lavagem_id;
+END;
+$$ LANGUAGE PLPGSQL;
+--------------------------------------------------------------------------
+
+
+--------------------------------------------------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+--------------------|| FUNÇÕES AUDITORIA ||-------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
 CREATE OR REPLACE FUNCTION trg_auditoria_generica()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -218,121 +645,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION CHECAR_CPF_UNICO_CLIENTE()
-RETURNS TRIGGER AS $$
-BEGIN
-    -- Verifica se o CPF que está sendo inserido/atualizado já existe na tabela CLIENTE
-    -- Exclui o próprio registro em caso de UPDATE para evitar falsos positivos
-    IF EXISTS (
-        SELECT 1
-        FROM CLIENTE
-        WHERE CPF = NEW.CPF
-          AND ID_CLIENTE IS DISTINCT FROM NEW.ID_CLIENTE -- Garante que não é o mesmo registro em caso de UPDATE
-    ) THEN
-        -- Se o CPF já existe, lança uma exceção e impede a operação
-        RAISE EXCEPTION 'Já existe um cliente cadastrado com o CPF %.', NEW.CPF;
-    END IF;
-
-    -- Retorna NEW para permitir que a operação de INSERT ou UPDATE continue
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION CHECAR_CPF_UNICO_FUNCIONARIO()
-RETURNS TRIGGER AS $$
-BEGIN
-    -- Verifica se o CPF que está sendo inserido/atualizado já existe na tabela FUNCIONARIO
-    -- Exclui o próprio registro em caso de UPDATE para evitar falsos positivos
-    IF EXISTS (
-        SELECT 1
-        FROM FUNCIONARIO
-        WHERE CPF = NEW.CPF
-          AND ID_FUNCIONARIO IS DISTINCT FROM NEW.ID_FUNCIONARIO -- Garante que não é o mesmo registro em caso de UPDATE
-    ) THEN
-        -- Se o CPF já existe, lança uma exceção e impede a operação
-        RAISE EXCEPTION 'Erro: Já existe um funcionário cadastrado com o CPF %.', NEW.CPF;
-    END IF;
-
-    -- Retorna NEW para permitir que a operação de INSERT ou UPDATE continue
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION CHECAR_CPF_UNICO_FORNECEDOR()
-RETURNS TRIGGER AS $$
-BEGIN
-    -- Verifica se o CNPJ que está sendo inserido/atualizado já existe na tabela FORNECEDOR
-    -- Exclui o próprio registro em caso de UPDATE para evitar falsos positivos
-    IF EXISTS (
-        SELECT 1
-        FROM FORNECEDOR
-        WHERE CNPJ = NEW.CNPJ
-          AND ID_FORNECEDOR IS DISTINCT FROM NEW.ID_FORNECEDOR -- Garante que não é o mesmo registro em caso de UPDATE
-    ) THEN
-        -- Se o CNPJ já existe, lança uma exceção e impede a operação
-        RAISE EXCEPTION 'Erro: Já existe um fornecedor cadastrado com o CNPJ %.', NEW.CNPJ;
-    END IF;
-
-    -- Retorna NEW para permitir que a operação de INSERT ou UPDATE continue
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION checar_preco_positivo_tipo_lavagem()
-RETURNS TRIGGER AS $$
-BEGIN
-    -- Verifica se PRECO_POR_KG é negativo
-    IF NEW.PRECO_POR_KG < 0 THEN
-        RAISE EXCEPTION 'O preço por KG não pode ser negativo. Valor fornecido: %.', NEW.PRECO_POR_KG;
-    END IF;
-
-    -- Verifica se PRECO_FIXO é negativo
-    IF NEW.PRECO_FIXO < 0 THEN
-        RAISE EXCEPTION 'O preço fixo não pode ser negativo. Valor fornecido: %.', NEW.PRECO_FIXO;
-    END IF;
-
-    -- Retorna NEW para permitir que a operação de INSERT ou UPDATE continue
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION verificar_qtd_estoque_positiva_produto()
-RETURNS TRIGGER AS $$
-BEGIN
-    -- Verifica se a quantidade em estoque que está sendo inserida/atualizada é negativa
-    IF NEW.QTD_ESTOQUE < 0 THEN
-        -- Se for negativa, lança uma exceção e impede a operação
-        RAISE EXCEPTION 'A quantidade em estoque não pode ser negativa. Valor fornecido: %.', NEW.QTD_ESTOQUE;
-    END IF;
-
-    -- Retorna NEW para permitir que a operação de INSERT ou UPDATE continue
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION DELETAR_FORNECEDOR_E_DEIXAR_FK_NULO_COMPRA()
-RETURNS TRIGGER AS $$
-BEGIN
-    UPDATE COMPRA
-    SET fk_compra_fornecedor = NULL
-    WHERE fk_compra_fornecedor = OLD.ID_FORNECEDOR;
-
-    RETURN OLD;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION LIMITAR_VALORES_STATUS_COMPRA()
-RETURNS TRIGGER AS $$
-BEGIN
-	IF NEW.STATUS_COMPRA NOT IN ('PENDENTE','ENTREGUE','CANCELADA') THEN
-		RAISE EXCEPTION 'A definição de Status da compra está diferente do padronizado. Valor fornecido: "%"', NEW.STATUS_COMPRA;
-	END IF;
-
-    RETURN NEW;
-END;
-$$
-LANGUAGE PLPGSQL;
-
 CREATE OR REPLACE FUNCTION ATUALIZAR_STATUS_PARCELAS()
 RETURNS VOID AS $$
 BEGIN
@@ -347,3 +659,16 @@ BEGIN
 END;
 $$
 LANGUAGE PLPGSQL;
+--------------------------------------------------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+

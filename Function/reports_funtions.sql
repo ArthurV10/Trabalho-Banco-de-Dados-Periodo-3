@@ -47,6 +47,7 @@ RETURNS TABLE (
     nome_cliente TEXT,
     telefone_cliente VARCHAR,
     id_lavagem INT,
+    numero_parcela INT,
     valor_devido DECIMAL,
     data_vencimento DATE,
     dias_em_atraso INT
@@ -61,6 +62,7 @@ BEGIN
         c.nome::TEXT,                   -- O nome do cliente
         c.telefone,                     -- O telefone dele
         l.id_lavagem,                   -- O ID da lavagem referente à dívida
+ 		p.num_parcela,					-- Número de parcelas
         p.valor_parcela,                -- O valor que ele deve
         p.dt_vencimento,                -- A data em que a dívida venceu
         (CURRENT_DATE - p.dt_vencimento)::INT -- Calcula os dias em atraso (data de hoje - data de vencimento)
@@ -82,6 +84,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP FUNCTION relatorio_inadimplencia();
 
 -- 1.3 Relatório de Rentabilidade por Serviço
 CREATE OR REPLACE FUNCTION relatorio_rentabilidade_por_servico(
@@ -153,5 +156,78 @@ BEGIN
     GROUP BY c.id_cliente, c.nome
     -- Ordena o resultado final para mostrar os maiores gastadores primeiro
     ORDER BY total_gasto, frequencia_lavagens DESC;
+END;
+$$ LANGUAGE PLPGSQL;
+
+CREATE OR REPLACE FUNCTION relatorio_consumo_produtos(
+    p_data_inicio DATE DEFAULT NULL, -- Parâmetro opcional para a data de início
+    p_data_fim DATE DEFAULT NULL     -- Parâmetro opcional para a data de fim
+)
+RETURNS TABLE (
+    nome_produto TEXT,
+    unidade_medida VARCHAR,
+    quantidade_total_utilizada DECIMAL
+)
+AS $$
+BEGIN
+    RETURN QUERY
+    -- Seleciona o nome do produto, sua unidade e soma a quantidade utilizada
+    SELECT
+        p.nome::TEXT,
+        p.unidade_medida,
+        SUM(lp.qtd_utilizada) AS quantidade_total_utilizada
+    -- Começa pela tabela que liga a lavagem ao produto, pois é a fonte do dado de consumo
+    FROM lavagem_produto AS lp
+    -- Junta com a tabela de produtos para obter o nome e a unidade de medida
+    JOIN produto AS p ON lp.fk_lavagem_produto_produto = p.id_produto
+    -- Junta com a tabela de lavagens para poder filtrar pela data em que o serviço ocorreu
+    JOIN lavagem AS l ON lp.fk_lavagem_produto_lavagem = l.id_lavagem
+    -- Aplica o filtro de data (se fornecido) com base na data de entrada da lavagem
+    WHERE 
+        (p_data_inicio IS NULL AND p_data_fim IS NULL) 
+        OR (l.dt_entrada::DATE BETWEEN p_data_inicio AND p_data_fim)
+    -- Agrupa por cada produto para que a função SUM() some o consumo de cada um separadamente
+    GROUP BY p.id_produto, p.nome, p.unidade_medida
+    -- Ordena o resultado para mostrar os produtos mais consumidos no topo da lista
+    ORDER BY quantidade_total_utilizada DESC;
+END;
+$$ LANGUAGE PLPGSQL;
+
+
+CREATE OR REPLACE FUNCTION relatorio_eficiencia_entrega(
+    p_data_inicio DATE DEFAULT NULL, -- Período para analisar os serviços CONCLUÍDOS
+    p_data_fim DATE DEFAULT NULL
+)
+RETURNS TABLE (
+    tipo_servico TEXT,
+    total_concluido BIGINT,
+    percentual_no_prazo NUMERIC,
+    tempo_medio_prometido_horas NUMERIC,
+    tempo_medio_real_entrega_horas NUMERIC
+)
+AS $$
+BEGIN
+    RETURN QUERY
+    -- Seleciona e calcula as métricas de eficiência para cada tipo de serviço
+    SELECT
+        tl.descricao::TEXT,
+        COUNT(l.id_lavagem) AS total_concluido,
+        -- Calcula o percentual de serviços entregues no prazo ou antes. Multiplica por 100.0 para forçar o cálculo decimal.
+        TRUNC((COUNT(*) FILTER (WHERE l.dt_real_entrega <= l.dt_prev_entrega) * 100.0 / COUNT(l.id_lavagem)), 2) AS percentual_no_prazo,
+        -- Calcula a média de horas prometidas para a entrega
+        TRUNC(AVG(EXTRACT(EPOCH FROM (l.dt_prev_entrega - l.dt_entrada))) / 3600, 2) AS tempo_medio_prometido_horas,
+        -- Calcula a média de horas que realmente levou para entregar
+        TRUNC(AVG(EXTRACT(EPOCH FROM (l.dt_real_entrega - l.dt_entrada))) / 3600, 2) AS tempo_medio_real_entrega_horas
+    FROM lavagem AS l
+    JOIN tipo_lavagem AS tl ON l.fk_lavagem_tipo = tl.id_tipo_lavagem
+    -- Filtra apenas por serviços que foram concluídos e possuem todas as datas necessárias para o cálculo
+    WHERE l.status_lavagem = 'CONCLUIDA' 
+      AND l.dt_entrada IS NOT NULL
+      AND l.dt_prev_entrega IS NOT NULL 
+      AND l.dt_real_entrega IS NOT NULL
+      -- Aplica o filtro de data opcional com base na data em que o serviço foi REALMENTE entregue
+      AND ((p_data_inicio IS NULL AND p_data_fim IS NULL) OR (l.dt_real_entrega::DATE BETWEEN p_data_inicio AND p_data_fim))
+    -- Agrupa por serviço para calcular as métricas para cada um
+    GROUP BY tl.descricao;
 END;
 $$ LANGUAGE PLPGSQL;
