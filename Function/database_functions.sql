@@ -1076,3 +1076,56 @@ $$ LANGUAGE PLPGSQL;
 --------------------------------------------------------------
 --------------------------------------------------------------
 
+
+
+
+
+
+
+
+
+-----------------|| FUNÇÕES LAVAGEM PRODUTO ||----------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+
+-- Função para deletar registros em LAVAGEM_PRODUTO quando uma LAVAGEM é deletada --
+CREATE OR REPLACE FUNCTION DELETAR_LAVAGEM_CASCADE_LAVAGEM_PRODUTO()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM LAVAGEM_PRODUTO
+    WHERE fk_lavagem_produto_lavagem = OLD.ID_LAVAGEM;
+    RETURN OLD;
+END;
+$$ LANGUAGE PLPGSQL;
+------------------------------------------------------------------------------------
+
+-- Função para deletar registros em LAVAGEM_PRODUTO quando um PRODUTO é deletado --
+CREATE OR REPLACE FUNCTION DELETAR_PRODUTO_CASCADE_LAVAGEM_PRODUTO()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM LAVAGEM_PRODUTO
+    WHERE fk_lavagem_produto_produto = OLD.ID_PRODUTO;
+    RETURN OLD;
+END;
+$$ LANGUAGE PLPGSQL;
+
+----------------------------------------------------------------------------------
+
+-- Função para não permitir valores negativos em QTD_UTILIZADA --
+CREATE OR REPLACE FUNCTION VERIFICAR_QTD_UTILIZADA_POSITIVO()
+RETURNS TRIGGER AS $$
+BEGIN
+	IF (NEW.QTD_UTILIZADA < 0) THEN
+		RAISE EXCEPTION 'A quantidade fornecida não pode ser negativa. Valor fornecido: %', NEW.QTD_UTILIZADA; -- Adicionado ; aqui
+	END IF;
+
+	RETURN NEW;
+END;
+$$
+LANGUAGE PLPGSQL;
+-----------------------------------------------------------------
+
+--------------------------------------------------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+--------------------------------------------------------------

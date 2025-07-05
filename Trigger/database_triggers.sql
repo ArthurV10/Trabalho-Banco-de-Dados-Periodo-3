@@ -419,6 +419,25 @@ CREATE OR REPLACE TRIGGER trg_subtrair_estoque_apos_uso
 AFTER INSERT ON lavagem_produto
 FOR EACH ROW
 EXECUTE FUNCTION trg_fun_subtrair_estoque_produto();
+
+-- Trigger na tabela LAVAGEM chave estrangeira quando for deletada
+CREATE OR REPLACE TRIGGER trg_deletar_lavagem_cascade_lavagem_produto
+BEFORE DELETE ON LAVAGEM
+FOR EACH ROW
+EXECUTE FUNCTION DELETAR_LAVAGEM_CASCADE_LAVAGEM_PRODUTO();
+
+-- Trigger na tabela PRODUTO chave estrangeira quando for deletada
+CREATE OR REPLACE TRIGGER trg_deletar_produto_cascade_lavagem_produto
+BEFORE DELETE ON PRODUTO
+FOR EACH ROW
+EXECUTE FUNCTION DELETAR_PRODUTO_CASCADE_LAVAGEM_PRODUTO();
+
+-- Trigger para verificar se quantidade é positivo
+CREATE OR REPLACE TRIGGER trg_verificar_qtd_utilizada_positivo
+BEFORE INSERT OR UPDATE ON LAVAGEM_PRODUTO
+FOR EACH ROW
+EXECUTE FUNCTION VERIFICAR_QTD_UTILIZADA_POSITIVO();
+
 --------------------------------------------------------------
 --------------------------------------------------------------
 --------------------------------------------------------------
