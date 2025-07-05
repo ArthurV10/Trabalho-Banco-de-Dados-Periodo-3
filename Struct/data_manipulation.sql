@@ -3,6 +3,7 @@ SELECT * FROM cliente;
 SELECT * FROM tipo_lavagem;
 SELECT * FROM tipo_pagamento;
 SELECT * FROM fornecedor;
+SELECT * FROM funcionario;
 SELECT * FROM produto;
 SELECT * FROM compra;
 SELECT * FROM item;
@@ -11,9 +12,8 @@ SELECT * FROM parcela;
 SELECT * FROM lavagem_produto;
 SELECT * FROM auditoria_log;
 
--- Script para apagar todas as tabelas do banco de dados.
--- A opção CASCADE remove as dependências (como chaves estrangeiras) automaticamente.
--- A opção IF EXISTS evita erros caso a tabela já tenha sido apagada.
+
+-- Script para remover todas as tabelas do banco de dados.
 DROP TABLE IF EXISTS lavagem_produto CASCADE;
 DROP TABLE IF EXISTS parcela CASCADE;
 DROP TABLE IF EXISTS item CASCADE;
@@ -30,33 +30,32 @@ DROP TABLE IF EXISTS auditoria_log CASCADE;
 SELECT deletar('cliente', 'id_cliente = 1');
 SELECT alterar('cliente', 'nome = ''Arthur Vieira''', 'id_cliente = 5');
 
+----------------------------------------------------------------------
+-- EXEMPLOS DE USO
+----------------------------------------------------------------------
+
 -- Para gerar o relatório de faturamento por método em um determinado periodo:
 SELECT * FROM relatorio_faturamento_periodo('2025-07-01', '2025-07-31');
 
 -- Para gerar o relatório de todos os clientes com pagamentos vencidos até hoje:
 SELECT * FROM relatorio_inadimplencia();
 
--- Para ver a rentabilidade de todos os serviços no mês de Julho de 2025:
+-- Para ver a rentabilidade dos serviços em diferentes períodos:
 SELECT * FROM relatorio_rentabilidade_por_servico('2025-07-01', '2025-07-31');
-
--- Para analisar a performance no segundo trimestre de 2025:
 SELECT * FROM relatorio_rentabilidade_por_servico('2025-04-01', '2025-06-30');
-
--- Para ver a rentabilidade de apenas um dia específico (ex: 08 de Julho de 2025):
 SELECT * FROM relatorio_rentabilidade_por_servico('2025-07-08', '2025-07-08');
 
--- Para ver o ranking de clientes do mês de Julho de 2025:
-SELECT * FROM relatorio_ranking_clientes('2025-07-01', '2025-07-31');
-SELECT * FROM relatorio_ranking_clientes(); --- Ranking geral
+-- Para ver o ranking de clientes:
+SELECT * FROM relatorio_ranking_clientes('2025-07-01', '2025-07-31'); -- Ranking do mês
+SELECT * FROM relatorio_ranking_clientes();                           -- Ranking geral
 
--- Para ver o consumo de produtos no mês de Junho de 2025
-SELECT * FROM relatorio_consumo_produtos('2025-06-01', '2025-06-30');
-SELECT * FROM relatorio_consumo_produtos(); -- Consumo geral de todos os produtos desde o início
+-- Para ver o consumo de produtos:
+SELECT * FROM relatorio_consumo_produtos('2025-06-01', '2025-06-30'); -- Consumo do mês
+SELECT * FROM relatorio_consumo_produtos();                           -- Consumo geral
 
-
--- Para ver a eficiência operacional GERAL de todos os tempos
-SELECT * FROM relatorio_eficiencia_entrega();
-SELECT * FROM relatorio_eficiencia_entrega('2025-06-01', '2025-06-30');
+-- Para consultar as views:
+SELECT * FROM V_DETALHES_LAVAGENS;
+SELECT * FROM V_ESTOQUE_ATUAL;
 
 -------------------- CRIAÇÃO DE CENÁRIOS DE TESTE ------------------------
 

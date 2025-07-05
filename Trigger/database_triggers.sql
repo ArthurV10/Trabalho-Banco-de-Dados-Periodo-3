@@ -264,18 +264,17 @@ BEFORE INSERT OR UPDATE ON LAVAGEM
 FOR EACH ROW
 EXECUTE FUNCTION LIMITAR_STATUS_LAVAGEM();
 
--- Trigger para verificar se status da lavagem está de acordo com a data--
-CREATE OR REPLACE TRIGGER trg_verificar_datas_lavagem
-BEFORE INSERT OR UPDATE ON lavagem
+-- Trigger para verificar se pego é negativo --
+CREATE OR REPLACE TRIGGER trg_verificar_peso_lavagem_positivo
+BEFORE INSERT OR UPDATE ON LAVAGEM
 FOR EACH ROW
-EXECUTE FUNCTION verificar_consistencia_datas_lavagem();
+EXECUTE FUNCTION VERIFICAR_PESO_LAVAGEM_POSITIVO();
 
--- Trigger na tabela LAVAGEM para informar sobre parcelamento
-CREATE OR REPLACE TRIGGER TRG_INFORMAR_PARCELAMENTO_LAVAGEM
-AFTER INSERT OR UPDATE ON LAVAGEM
+-- Wincronização entre parcela e lavagem executada após qualquer alteração.
+CREATE TRIGGER trg_sincronizar_dados_lavagem
+AFTER INSERT OR UPDATE OR DELETE ON parcela
 FOR EACH ROW
-EXECUTE FUNCTION INFORMAR_PARCELAMENTO_LAVAGEM();
-
+EXECUTE FUNCTION fun_sincronizar_dados_lavagem();
 --------------------------------------------------------------
 --------------------------------------------------------------
 --------------------------------------------------------------
@@ -383,17 +382,12 @@ BEFORE INSERT OR UPDATE ON PARCELA
 FOR EACH ROW
 EXECUTE FUNCTION VERIFICAR_STATUS_PARCELA();
 
--- Trigger para atualizar automaticamente as parcelas caso passe da data
-CREATE OR REPLACE TRIGGER trg_atualizar_status_parcelas_agendado
-AFTER INSERT OR UPDATE OR DELETE ON PARCELA
-FOR EACH STATEMENT
-EXECUTE FUNCTION ATUALIZAR_STATUS_PARCELAS();
 
--- Trigger na tabela LAVAGEM para informar sobre parcelamento
-CREATE OR REPLACE TRIGGER TRG_INFORMAR_PARCELAMENTO_LAVAGEM
-AFTER INSERT OR UPDATE ON LAVAGEM
+CREATE OR REPLACE TRIGGER trg_validar_qtd_parcelas
+BEFORE INSERT OR UPDATE ON LAVAGEM
 FOR EACH ROW
-EXECUTE FUNCTION INFORMAR_PARCELAMENTO_LAVAGEM();
+EXECUTE FUNCTION fun_validar_qtd_parcelas();
+
 --------------------------------------------------------------
 --------------------------------------------------------------
 --------------------------------------------------------------
@@ -419,6 +413,25 @@ CREATE OR REPLACE TRIGGER trg_subtrair_estoque_apos_uso
 AFTER INSERT ON lavagem_produto
 FOR EACH ROW
 EXECUTE FUNCTION trg_fun_subtrair_estoque_produto();
+
+-- Trigger na tabela LAVAGEM chave estrangeira quando for deletada
+CREATE OR REPLACE TRIGGER trg_deletar_lavagem_cascade_lavagem_produto
+BEFORE DELETE ON LAVAGEM
+FOR EACH ROW
+EXECUTE FUNCTION DELETAR_LAVAGEM_CASCADE_LAVAGEM_PRODUTO();
+
+-- Trigger na tabela PRODUTO chave estrangeira quando for deletada
+CREATE OR REPLACE TRIGGER trg_deletar_produto_cascade_lavagem_produto
+BEFORE DELETE ON PRODUTO
+FOR EACH ROW
+EXECUTE FUNCTION DELETAR_PRODUTO_CASCADE_LAVAGEM_PRODUTO();
+
+-- Trigger para verificar se quantidade é positivo
+CREATE OR REPLACE TRIGGER trg_verificar_qtd_utilizada_positivo
+BEFORE INSERT OR UPDATE ON LAVAGEM_PRODUTO
+FOR EACH ROW
+EXECUTE FUNCTION VERIFICAR_QTD_UTILIZADA_POSITIVO();
+
 --------------------------------------------------------------
 --------------------------------------------------------------
 --------------------------------------------------------------

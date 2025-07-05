@@ -1,233 +1,122 @@
--- 1.1 Relatório de Faturamento por Período
-CREATE OR REPLACE FUNCTION relatorio_faturamento_periodo(
-    p_data_inicio DATE,
-    p_data_fim DATE
-)
--- Define que a saída será uma tabela com duas colunas
-RETURNS TABLE (
-    forma_pagamento TEXT,
-    valor_total_faturado DECIMAL
-)
-AS $$
+----------------------------------------------------------------------
+--==================================================================--
+--||                                                              ||--
+--||         ARQUIVO DE RELATÓRIOS, VIEWS E FUNÇÕES DE APOIO        ||--
+--||                                                              ||--
+--==================================================================--
+--
+-- Este arquivo centraliza todas as funções de consulta e as views
+-- utilizadas para análise e visualização dos dados da lavanderia.
+--
+----------------------------------------------------------------------
+
+
+----------------------------------------------------------------------
+-- SEÇÃO 1: FUNÇÕES DE RELATÓRIO
+----------------------------------------------------------------------
+-- Estas funções aceitam parâmetros para gerar análises específicas
+-- sobre o desempenho do negócio.
+----------------------------------------------------------------------
+
+-- Relatório 1.1: Faturamento por Período
+CREATE OR REPLACE FUNCTION relatorio_faturamento_periodo(p_data_inicio DATE, p_data_fim DATE)
+RETURNS TABLE (forma_pagamento TEXT, valor_total_faturado DECIMAL) AS $$
 BEGIN
-    -- Inicia a consulta que vai gerar a tabela de retorno
     RETURN QUERY
-    -- 1. SELECIONA os dados finais que queremos ver:
-    SELECT 
-        tp.nome::TEXT,           -- O nome da forma de pagamento (ex: 'PIX', 'Dinheiro')
-        SUM(par.valor_parcela)   -- A SOMA de todos os valores das parcelas encontradas
-    
-    -- 2. COMEÇA pela tabela 'parcela', que é onde estão os valores e as datas de pagamento.
+    SELECT tp.nome::TEXT, SUM(par.valor_parcela)
     FROM parcela AS par
-    
-    -- 3. JUNTA com a tabela 'lavagem' para saber qual foi o tipo de pagamento usado em cada serviço.
     JOIN lavagem AS lav ON par.fk_parcela_lavagem = lav.id_lavagem
-    
-    -- 4. JUNTA com a tabela 'tipo_pagamento' para obter o NOME da forma de pagamento.
     JOIN tipo_pagamento AS tp ON lav.fk_lavagem_pagamento = tp.id_tipo_pagamento
-    
-    -- 5. FILTRA os resultados para atender a duas condições:
-    WHERE 
-        par.status_parcela = 'PAGO'  -- Apenas parcelas que já foram pagas (faturamento real)
-        AND par.dt_pagamento BETWEEN p_data_inicio AND p_data_fim -- Cujo pagamento ocorreu dentro do período informado
-        
-    -- 6. AGRUPA todas as linhas pela forma de pagamento, para que o SUM() some os valores de cada forma separadamente.
+    WHERE par.status_parcela = 'PAGO' AND par.dt_pagamento BETWEEN p_data_inicio AND p_data_fim
     GROUP BY tp.nome
-    
-    -- 7. ORDENA o resultado final para mostrar as formas de pagamento mais lucrativas primeiro.
     ORDER BY SUM(par.valor_parcela) DESC;
 END;
 $$ LANGUAGE plpgsql;
 
 
--- 1.2 Relatório de Inadimplência
+-- Relatório 1.2: Inadimplência (Contas Atrasadas)
 CREATE OR REPLACE FUNCTION relatorio_inadimplencia()
--- Define que a saída será uma tabela com 6 colunas
-RETURNS TABLE (
-    nome_cliente TEXT,
-    telefone_cliente VARCHAR,
-    id_lavagem INT,
-    numero_parcela INT,
-    valor_devido DECIMAL,
-    data_vencimento DATE,
-    dias_em_atraso INT
-)
-AS $$
+RETURNS TABLE (nome_cliente TEXT, telefone_cliente VARCHAR, id_lavagem INT, numero_parcela INT, valor_devido DECIMAL, data_vencimento DATE, dias_em_atraso INT) AS $$
 BEGIN
-	PERFORM ATUALIZAR_STATUS_PARCELAS();
-
+    PERFORM ATUALIZAR_STATUS_PARCELAS();
     RETURN QUERY
-    -- 1. SELECIONA os dados que queremos ver:
-    SELECT 
-        c.nome::TEXT,                   -- O nome do cliente
-        c.telefone,                     -- O telefone dele
-        l.id_lavagem,                   -- O ID da lavagem referente à dívida
- 		p.num_parcela,					-- Número de parcelas
-        p.valor_parcela,                -- O valor que ele deve
-        p.dt_vencimento,                -- A data em que a dívida venceu
-        (CURRENT_DATE - p.dt_vencimento)::INT -- Calcula os dias em atraso (data de hoje - data de vencimento)
-
-    -- 2. COMEÇA pela tabela 'parcela', onde estão as informações de vencimento e status.
+    SELECT c.nome::TEXT, c.telefone, l.id_lavagem, p.num_parcela, p.valor_parcela, p.dt_vencimento, (CURRENT_DATE - p.dt_vencimento)::INT AS dias_em_atraso
     FROM parcela AS p
-
-    -- 3. JUNTA com a tabela 'lavagem' para descobrir qual cliente está associado àquela parcela.
     JOIN lavagem AS l ON p.fk_parcela_lavagem = l.id_lavagem
-
-    -- 4. JUNTA com a tabela 'cliente' para pegar o NOME e o TELEFONE do devedor.
     JOIN cliente AS c ON l.fk_lavagem_cliente = c.id_cliente
-    
-    -- 5. FILTRA os resultados atrasados:
-    WHERE 
-        p.status_parcela = 'ATRASADO'
-    -- 6. ORDENA o resultado para mostrar os clientes com mais dias de atraso primeiro, pois são os casos mais urgentes.
+    WHERE p.status_parcela = 'ATRASADO'
     ORDER BY dias_em_atraso DESC;
 END;
 $$ LANGUAGE plpgsql;
 
-DROP FUNCTION relatorio_inadimplencia();
 
--- 1.3 Relatório de Rentabilidade por Serviço
-CREATE OR REPLACE FUNCTION relatorio_rentabilidade_por_servico(
-    p_data_inicio DATE,
-    p_data_fim DATE
-)
--- Define a saída como uma tabela de 3 colunas
-RETURNS TABLE(
-    tipo_servico TEXT,
-    quantidade_solicitada BIGINT,
-    receita_total DECIMAL
-)
-AS $$
+-- Relatório 1.3: Rentabilidade por Serviço
+CREATE OR REPLACE FUNCTION relatorio_rentabilidade_por_servico(p_data_inicio DATE, p_data_fim DATE)
+RETURNS TABLE(tipo_servico TEXT, quantidade_solicitada BIGINT, receita_total DECIMAL) AS $$
 BEGIN
     RETURN QUERY
-    -- 1. SELECIONA os dados que queremos analisar:
-    SELECT 
-        tl.descricao::TEXT,          -- A descrição do serviço (ex: 'Lavagem a Seco (Peça)')
-        COUNT(DISTINCT l.id_lavagem), -- A CONTAGEM de quantas vezes esse serviço foi feito
-        SUM(p.valor_parcela)         -- A SOMA de todo o dinheiro que esse serviço gerou
-
-    -- 2. COMEÇA pela tabela 'parcela' para ter acesso aos valores pagos.
+    SELECT tl.descricao::TEXT, COUNT(DISTINCT l.id_lavagem), SUM(p.valor_parcela)
     FROM parcela AS p
-    
-    -- 3. JUNTA com a tabela 'lavagem' para saber qual tipo de serviço corresponde a cada parcela.
     JOIN lavagem AS l ON p.fk_parcela_lavagem = l.id_lavagem
-    
-    -- 4. JUNTA com a tabela 'tipo_lavagem' para obter a DESCRIÇÃO do serviço.
     JOIN tipo_lavagem AS tl ON l.fk_lavagem_tipo = tl.id_tipo_lavagem
-    
-    -- 5. FILTRA os resultados para considerar apenas o faturamento real no período.
-    WHERE 
-        p.status_parcela = 'PAGO' -- Apenas parcelas pagas
-        AND p.dt_pagamento BETWEEN p_data_inicio AND p_data_fim -- Pagas dentro do período
-        
-    -- 6. AGRUPA as linhas por tipo de serviço para que o COUNT e o SUM funcionem para cada serviço individualmente.
+    WHERE p.status_parcela = 'PAGO' AND p.dt_pagamento BETWEEN p_data_inicio AND p_data_fim
     GROUP BY tl.descricao
-    
-    -- 7. ORDENA o resultado para mostrar os serviços que mais geraram receita no topo.
     ORDER BY receita_total DESC;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION relatorio_ranking_clientes(
-    p_data_inicio DATE DEFAULT NULL, -- Parâmetro opcional para a data de início
-    p_data_fim DATE DEFAULT NULL     -- Parâmetro opcional para a data de fim
-)
-RETURNS TABLE (
-    posicao_ranking BIGINT,
-    nome_cliente TEXT,
-    total_gasto DECIMAL,
-    frequencia_lavagens BIGINT
-)
-AS $$
+
+-- Relatório 1.4: Ranking de Clientes
+CREATE OR REPLACE FUNCTION relatorio_ranking_clientes(p_data_inicio DATE DEFAULT NULL, p_data_fim DATE DEFAULT NULL)
+RETURNS TABLE (posicao_ranking BIGINT, nome_cliente TEXT, total_gasto DECIMAL, frequencia_lavagens BIGINT) AS $$
 BEGIN
     RETURN QUERY
-    -- Seleciona os dados e calcula o ranking, total gasto e frequência para cada cliente
-    SELECT
-        ROW_NUMBER() OVER (ORDER BY SUM(p.valor_parcela) DESC), -- Numera as linhas para criar a posição no ranking
-        c.nome::TEXT,                                           -- Pega o nome do cliente
-        SUM(p.valor_parcela),                                   -- Soma o valor de todas as parcelas pagas
-        COUNT(DISTINCT l.id_lavagem)                            -- Conta o número de serviços distintos
+    SELECT ROW_NUMBER() OVER (ORDER BY SUM(p.valor_parcela) DESC), c.nome::TEXT, SUM(p.valor_parcela), COUNT(DISTINCT l.id_lavagem)
     FROM parcela AS p
     JOIN lavagem AS l ON p.fk_parcela_lavagem = l.id_lavagem
     JOIN cliente AS c ON l.fk_lavagem_cliente = c.id_cliente
-    -- Filtra apenas por parcelas pagas e aplica o filtro de data somente se os parâmetros forem fornecidos
     WHERE p.status_parcela = 'PAGO' AND ((p_data_inicio IS NULL AND p_data_fim IS NULL) OR (p.dt_pagamento BETWEEN p_data_inicio AND p_data_fim))
-    -- Agrupa os resultados por cliente para que as funções de agregação (SUM, COUNT) funcionem corretamente
     GROUP BY c.id_cliente, c.nome
-    -- Ordena o resultado final para mostrar os maiores gastadores primeiro
-    ORDER BY total_gasto, frequencia_lavagens DESC;
+    ORDER BY total_gasto DESC, frequencia_lavagens DESC;
 END;
 $$ LANGUAGE PLPGSQL;
 
-CREATE OR REPLACE FUNCTION relatorio_consumo_produtos(
-    p_data_inicio DATE DEFAULT NULL, -- Parâmetro opcional para a data de início
-    p_data_fim DATE DEFAULT NULL     -- Parâmetro opcional para a data de fim
-)
-RETURNS TABLE (
-    nome_produto TEXT,
-    unidade_medida VARCHAR,
-    quantidade_total_utilizada DECIMAL
-)
-AS $$
-BEGIN
-    RETURN QUERY
-    -- Seleciona o nome do produto, sua unidade e soma a quantidade utilizada
-    SELECT
-        p.nome::TEXT,
-        p.unidade_medida,
-        SUM(lp.qtd_utilizada) AS quantidade_total_utilizada
-    -- Começa pela tabela que liga a lavagem ao produto, pois é a fonte do dado de consumo
-    FROM lavagem_produto AS lp
-    -- Junta com a tabela de produtos para obter o nome e a unidade de medida
-    JOIN produto AS p ON lp.fk_lavagem_produto_produto = p.id_produto
-    -- Junta com a tabela de lavagens para poder filtrar pela data em que o serviço ocorreu
-    JOIN lavagem AS l ON lp.fk_lavagem_produto_lavagem = l.id_lavagem
-    -- Aplica o filtro de data (se fornecido) com base na data de entrada da lavagem
-    WHERE 
-        (p_data_inicio IS NULL AND p_data_fim IS NULL) 
-        OR (l.dt_entrada::DATE BETWEEN p_data_inicio AND p_data_fim)
-    -- Agrupa por cada produto para que a função SUM() some o consumo de cada um separadamente
-    GROUP BY p.id_produto, p.nome, p.unidade_medida
-    -- Ordena o resultado para mostrar os produtos mais consumidos no topo da lista
-    ORDER BY quantidade_total_utilizada DESC;
-END;
-$$ LANGUAGE PLPGSQL;
+----------------------------------------------------------------------
+-- SEÇÃO 2: VIEWS (VISÕES)
+----------------------------------------------------------------------
+-- Estas views funcionam como tabelas virtuais para simplificar
+-- consultas do dia a dia.
+----------------------------------------------------------------------
+
+-- View 2.1: Painel de Controle de Lavagens (CORRIGIDA)
+CREATE OR REPLACE VIEW V_DETALHES_LAVAGENS AS
+SELECT
+    l.id_lavagem,
+    l.fk_lavagem_cliente, -- Adicionado ID do cliente para facilitar filtros
+    l.status_lavagem,
+    (SELECT SUM(p.valor_parcela) FROM parcela p WHERE p.fk_parcela_lavagem = l.id_lavagem) AS valor_total_lavagem,
+    l.dt_entrada,
+    l.dt_prev_entrega,
+    l.dt_real_entrega,
+    c.nome AS nome_cliente,
+    f.nome AS nome_funcionario,
+    tl.descricao AS tipo_servico,
+    l.observacoes
+FROM 
+    lavagem AS l
+LEFT JOIN cliente AS c ON l.fk_lavagem_cliente = c.id_cliente
+LEFT JOIN funcionario AS f ON l.fk_lavagem_funcionario = f.id_funcionario
+LEFT JOIN tipo_lavagem AS tl ON l.fk_lavagem_tipo = tl.id_tipo_lavagem;
 
 
-CREATE OR REPLACE FUNCTION relatorio_eficiencia_entrega(
-    p_data_inicio DATE DEFAULT NULL, -- Período para analisar os serviços CONCLUÍDOS
-    p_data_fim DATE DEFAULT NULL
-)
-RETURNS TABLE (
-    tipo_servico TEXT,
-    total_concluido BIGINT,
-    percentual_no_prazo NUMERIC,
-    tempo_medio_prometido_horas NUMERIC,
-    tempo_medio_real_entrega_horas NUMERIC
-)
-AS $$
-BEGIN
-    RETURN QUERY
-    -- Seleciona e calcula as métricas de eficiência para cada tipo de serviço
-    SELECT
-        tl.descricao::TEXT,
-        COUNT(l.id_lavagem) AS total_concluido,
-        -- Calcula o percentual de serviços entregues no prazo ou antes. Multiplica por 100.0 para forçar o cálculo decimal.
-        TRUNC((COUNT(*) FILTER (WHERE l.dt_real_entrega <= l.dt_prev_entrega) * 100.0 / COUNT(l.id_lavagem)), 2) AS percentual_no_prazo,
-        -- Calcula a média de horas prometidas para a entrega
-        TRUNC(AVG(EXTRACT(EPOCH FROM (l.dt_prev_entrega - l.dt_entrada))) / 3600, 2) AS tempo_medio_prometido_horas,
-        -- Calcula a média de horas que realmente levou para entregar
-        TRUNC(AVG(EXTRACT(EPOCH FROM (l.dt_real_entrega - l.dt_entrada))) / 3600, 2) AS tempo_medio_real_entrega_horas
-    FROM lavagem AS l
-    JOIN tipo_lavagem AS tl ON l.fk_lavagem_tipo = tl.id_tipo_lavagem
-    -- Filtra apenas por serviços que foram concluídos e possuem todas as datas necessárias para o cálculo
-    WHERE l.status_lavagem = 'CONCLUIDA' 
-      AND l.dt_entrada IS NOT NULL
-      AND l.dt_prev_entrega IS NOT NULL 
-      AND l.dt_real_entrega IS NOT NULL
-      -- Aplica o filtro de data opcional com base na data em que o serviço foi REALMENTE entregue
-      AND ((p_data_inicio IS NULL AND p_data_fim IS NULL) OR (l.dt_real_entrega::DATE BETWEEN p_data_inicio AND p_data_fim))
-    -- Agrupa por serviço para calcular as métricas para cada um
-    GROUP BY tl.descricao;
-END;
-$$ LANGUAGE PLPGSQL;
+-- View 2.2: Estoque Atual de Forma Legível
+CREATE OR REPLACE VIEW V_ESTOQUE_ATUAL AS
+SELECT
+    id_produto,
+    nome,
+    TRUNC((qtd_estoque / fator_conversao), 2) AS quantidade_em_estoque,
+    unidade_medida
+FROM
+    produto
+ORDER BY
+    nome;

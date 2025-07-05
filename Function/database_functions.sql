@@ -1,7 +1,7 @@
 -- Codigo para funções das tabelas --
 
----------------------|| FUNÇÕES GERAIS ||---------------------
---------------------------------------------------------------
+---------------------|| FUNÇÕES GERAIS || ---------------------
+-------------------------------@------------------------------
 --------------------------------------------------------------
 
 ----------- Função para cadastrar dados dentro de qualquer tabela -----------
@@ -184,7 +184,7 @@ LANGUAGE PLPGSQL;
 
 
 --------------------|| FUNÇÕES CLIENTE ||---------------------
---------------------------------------------------------------
+------------------------------@-------------------------------
 --------------------------------------------------------------
 CREATE OR REPLACE FUNCTION CHECAR_CPF_UNICO_CLIENTE()
 RETURNS TRIGGER AS $$
@@ -218,7 +218,7 @@ $$ LANGUAGE plpgsql;
 
 
 -------------------|| FUNÇÕES FUNCIONARIO ||------------------
---------------------------------------------------------------
+------------------------------@-------------------------------
 --------------------------------------------------------------
 CREATE OR REPLACE FUNCTION CHECAR_CPF_UNICO_FUNCIONARIO()
 RETURNS TRIGGER AS $$
@@ -252,7 +252,7 @@ $$ LANGUAGE plpgsql;
 
 
 ------------------|| FUNÇÕES TIPO LAVAGEM ||------------------
---------------------------------------------------------------
+------------------------------@-------------------------------
 --------------------------------------------------------------
 CREATE OR REPLACE FUNCTION checar_preco_positivo_tipo_lavagem()
 RETURNS TRIGGER AS $$
@@ -284,7 +284,7 @@ $$ LANGUAGE plpgsql;
 
 
 -------------------|| FUNÇÕES FORNECEDOR ||-------------------
---------------------------------------------------------------
+-----------------------------@--------------------------------
 --------------------------------------------------------------
 CREATE OR REPLACE FUNCTION CHECAR_CNPJ_UNICO_FORNECEDOR()
 RETURNS TRIGGER AS $$
@@ -318,7 +318,7 @@ $$ LANGUAGE plpgsql;
 
 
 ---------------------|| FUNÇÕES PRODUTO ||--------------------
---------------------------------------------------------------
+------------------------------@-------------------------------
 --------------------------------------------------------------
 CREATE OR REPLACE FUNCTION verificar_qtd_estoque_positiva_produto()
 RETURNS TRIGGER AS $$
@@ -359,7 +359,7 @@ $$ LANGUAGE plpgsql;
 
 
 ---------------------|| FUNÇÕES COMPRA ||---------------------
---------------------------------------------------------------
+------------------------------@-------------------------------
 --------------------------------------------------------------
 
 -------- Função para tornar FK nula ao fornecedor ser deletado --------
@@ -442,7 +442,7 @@ $$ LANGUAGE plpgsql;
 
 
 ----------------------|| FUNÇÕES ITEM ||----------------------
---------------------------------------------------------------
+------------------------------@-------------------------------
 --------------------------------------------------------------
 -- Função para quando deletar COMPRA, setar valor nulo --
 CREATE OR REPLACE FUNCTION DELETAR_COMPRA_SETAR_NULO_FK_ITEM()
@@ -522,7 +522,7 @@ LANGUAGE PLPGSQL;
 
 
 ---------------------|| FUNÇÕES LAVAGEM ||--------------------
---------------------------------------------------------------
+--------------------------------@-----------------------------
 --------------------------------------------------------------
 
 ----------- Função para garantir consistencia dos dados -----------
@@ -550,44 +550,77 @@ END;
 $$ LANGUAGE plpgsql;
 -------------------------------------------------------------------
 
------ Função para realizar cadastra na tabela lavagem de forma ideal -----
+----- Função para realizar cadastra na tabela lavagem -----
 CREATE OR REPLACE FUNCTION CADASTRAR_LAVAGEM(
     p_cliente_cpf VARCHAR,
     p_funcionario_cpf VARCHAR,
     p_tipo_lavagem_descricao VARCHAR,
     p_tipo_pagamento_nome VARCHAR,
     p_dt_prev_entrega TIMESTAMP,
-    p_status_lavagem VARCHAR,
     p_observacoes TEXT,
-    p_dt_real_entrega TIMESTAMP DEFAULT NULL -- NOVO PARÂMETRO OPCIONAL
+    p_peso_lavagem DECIMAL DEFAULT NULL,
+    p_qtd_parcelas INT DEFAULT 1
 )
 RETURNS INT AS $$
 DECLARE
     v_cliente_id INT;
     v_funcionario_id INT;
-    v_tipo_lavagem_id INT;
+    v_tipo_lavagem_info RECORD;
     v_tipo_pagamento_id INT;
     v_nova_lavagem_id INT;
+    v_valor_total_calculado DECIMAL(10, 2);
+    v_valor_por_parcela DECIMAL(10, 2);
+    v_max_parcelas_permitidas INT;
+    v_valor_primeiras_parcelas DECIMAL(10, 2);
+    v_valor_ultima_parcela DECIMAL(10, 2);
+    i INT;
 BEGIN
-    -- Busca os IDs com base nos dados fornecidos
+	PERFORM ATUALIZAR_STATUS_PARCELAS();
+
+    -- 1. Busca dos IDs
     SELECT id_cliente INTO v_cliente_id FROM cliente WHERE cpf = p_cliente_cpf;
     IF NOT FOUND THEN RAISE EXCEPTION 'Cliente com CPF "%" não encontrado.', p_cliente_cpf; END IF;
-
     SELECT id_funcionario INTO v_funcionario_id FROM funcionario WHERE cpf = p_funcionario_cpf;
     IF NOT FOUND THEN RAISE EXCEPTION 'Funcionário com CPF "%" não encontrado.', p_funcionario_cpf; END IF;
-
-    SELECT id_tipo_lavagem INTO v_tipo_lavagem_id FROM tipo_lavagem WHERE descricao = p_tipo_lavagem_descricao;
+    SELECT * INTO v_tipo_lavagem_info FROM tipo_lavagem WHERE descricao = p_tipo_lavagem_descricao;
     IF NOT FOUND THEN RAISE EXCEPTION 'Tipo de Lavagem com a descrição "%" não encontrado.', p_tipo_lavagem_descricao; END IF;
-
     SELECT id_tipo_pagamento INTO v_tipo_pagamento_id FROM tipo_pagamento WHERE nome = p_tipo_pagamento_nome;
     IF NOT FOUND THEN RAISE EXCEPTION 'Tipo de Pagamento com o nome "%" não encontrado.', p_tipo_pagamento_nome; END IF;
 
-    -- Insere na tabela lavagem, agora incluindo a data de entrega real
-    INSERT INTO lavagem (fk_lavagem_cliente, fk_lavagem_funcionario, fk_lavagem_tipo, fk_lavagem_pagamento, dt_prev_entrega, status_lavagem, observacoes, dt_real_entrega) 
-    VALUES (v_cliente_id, v_funcionario_id, v_tipo_lavagem_id, v_tipo_pagamento_id, p_dt_prev_entrega, p_status_lavagem, p_observacoes, p_dt_real_entrega) 
+    -- 2. Cálculo do Preço Total
+    IF v_tipo_lavagem_info.preco_fixo IS NOT NULL THEN
+        v_valor_total_calculado := v_tipo_lavagem_info.preco_fixo;
+    ELSIF v_tipo_lavagem_info.preco_por_kg IS NOT NULL THEN
+        IF p_peso_lavagem IS NULL OR p_peso_lavagem <= 0 THEN RAISE EXCEPTION 'Para lavagens por KG, o peso deve ser informado.'; END IF;
+        v_valor_total_calculado := v_tipo_lavagem_info.preco_por_kg * p_peso_lavagem;
+    ELSE
+        RAISE EXCEPTION 'O tipo de lavagem "%" não possui uma regra de precificação.', p_tipo_lavagem_descricao;
+    END IF;
+
+    -- 3. Validação da Parcela Mínima de R$ 10,00
+    IF p_qtd_parcelas > 0 THEN
+        v_valor_por_parcela := v_valor_total_calculado / p_qtd_parcelas;
+        IF v_valor_por_parcela < 10.00 AND p_qtd_parcelas > 1 THEN
+            v_max_parcelas_permitidas := floor(v_valor_total_calculado / 10.00);
+            RAISE EXCEPTION 'O valor por parcela (R$%) é menor que o mínimo de R$ 10,00. Para este serviço, o máximo permitido é de % parcela(s).', 
+                TRUNC(v_valor_por_parcela, 2), v_max_parcelas_permitidas;
+        END IF;
+    END IF;
+
+    -- 4. Inserção na Tabela LAVAGEM
+    INSERT INTO lavagem (fk_lavagem_cliente, fk_lavagem_funcionario, fk_lavagem_tipo, fk_lavagem_pagamento, dt_prev_entrega, status_lavagem, valor_total_lavagem, peso_lavagem, qtd_parcelas, observacoes) 
+    VALUES (v_cliente_id, v_funcionario_id, v_tipo_lavagem_info.id_tipo_lavagem, v_tipo_pagamento_id, p_dt_prev_entrega, 'EM ANDAMENTO', v_valor_total_calculado, p_peso_lavagem, p_qtd_parcelas, p_observacoes) 
     RETURNING id_lavagem INTO v_nova_lavagem_id;
 
-    RAISE NOTICE 'Lavagem de ID % cadastrada com sucesso.', v_nova_lavagem_id;
+    -- 5. Criação das Parcelas
+    v_valor_primeiras_parcelas := TRUNC(v_valor_total_calculado / p_qtd_parcelas, 2);
+    v_valor_ultima_parcela := v_valor_total_calculado - (v_valor_primeiras_parcelas * (p_qtd_parcelas - 1));
+    FOR i IN 1..p_qtd_parcelas LOOP
+        INSERT INTO parcela (fk_parcela_lavagem, num_parcela, valor_parcela, dt_vencimento, status_parcela)
+        VALUES (v_nova_lavagem_id, i, CASE WHEN i < p_qtd_parcelas THEN v_valor_primeiras_parcelas ELSE v_valor_ultima_parcela END, (p_dt_prev_entrega::DATE + (i-1) * INTERVAL '1 month'), 'PENDENTE');
+    END LOOP;
+
+    RAISE NOTICE 'Lavagem de ID % (Valor: R$%) cadastrada e % parcela(s) gerada(s) com sucesso.', v_nova_lavagem_id, v_valor_total_calculado, p_qtd_parcelas;
     RETURN v_nova_lavagem_id;
 END;
 $$ LANGUAGE PLPGSQL;
@@ -726,100 +759,134 @@ $$ LANGUAGE PLPGSQL;
 -- Função para adicionar um valor extra ao VALOR_TOTAL_LAVAGEM de uma lavagem específica
 CREATE OR REPLACE FUNCTION ADICIONAR_VALOR_EXTRA_LAVAGEM(
     P_ID_LAVAGEM INT,
-    P_VALOR_ADICIONAL DECIMAL(10,2)
+    P_VALOR_TAXA DECIMAL(10,2)
 )
 RETURNS VOID
 AS $$
 DECLARE
-    v_valor_atual DECIMAL(10,2);
-    v_novo_valor DECIMAL(10,2);
-    v_tabela_nome TEXT := 'LAVAGEM';
-    v_conjunto_atualizacao TEXT;
-    v_condicao TEXT;
+    v_num_ultima_parcela INT;
 BEGIN
-    -- 1. Verificar se a lavagem existe e obter o valor total atual
-    SELECT VALOR_TOTAL_LAVAGEM INTO v_valor_atual
-    FROM LAVAGEM
-    WHERE ID_LAVAGEM = P_ID_LAVAGEM;
-
-    -- Se a lavagem não for encontrada, lança uma exceção
-    IF NOT FOUND THEN
+    -- 1. Verifica se a lavagem existe
+    IF NOT EXISTS (SELECT 1 FROM lavagem WHERE id_lavagem = P_ID_LAVAGEM) THEN
         RAISE EXCEPTION 'Erro: Lavagem com ID % não encontrada.', P_ID_LAVAGEM;
     END IF;
 
-    -- 2. Calcular o novo valor total
-    -- Se o valor atual for NULL, considera 0 para a soma
-    v_novo_valor := COALESCE(v_valor_atual, 0) + P_VALOR_ADICIONAL;
+    -- 2. Descobre qual o número da última parcela existente
+    SELECT COALESCE(MAX(num_parcela), 0) INTO v_num_ultima_parcela
+    FROM parcela
+    WHERE fk_parcela_lavagem = P_ID_LAVAGEM;
 
-    -- 3. Preparar os argumentos para a função ALTERAR
-    v_conjunto_atualizacao := 'VALOR_TOTAL_LAVAGEM = ' || v_novo_valor::TEXT;
-    v_condicao := 'ID_LAVAGEM = ' || P_ID_LAVAGEM::TEXT;
+    -- 3. Insere uma NOVA PARCELA para representar a taxa extra
+    INSERT INTO parcela (fk_parcela_lavagem, num_parcela, valor_parcela, dt_vencimento, status_parcela)
+    VALUES (
+        P_ID_LAVAGEM,
+        v_num_ultima_parcela + 1,
+        P_VALOR_TAXA,
+        CURRENT_DATE, -- Vencimento imediato
+        'PENDENTE'
+    );
 
-    -- 4. Chamar a função ALTERAR para atualizar o registro da lavagem
-    PERFORM ALTERAR(v_tabela_nome, v_conjunto_atualizacao, v_condicao);
+    RAISE NOTICE 'Valor de R$ % adicionado com sucesso à lavagem ID %.', P_VALOR_TAXA, P_ID_LAVAGEM;
 
-    RAISE NOTICE 'Valor de R$ % adicionado com sucesso à lavagem ID %.', P_VALOR_ADICIONAL, P_ID_LAVAGEM;
-    RAISE NOTICE 'Novo VALOR_TOTAL_LAVAGEM para lavagem ID % é R$ %.', P_ID_LAVAGEM, v_novo_valor;
-
-EXCEPTION
-    WHEN OTHERS THEN
-        RAISE EXCEPTION 'Erro ao adicionar valor extra à lavagem ID %: %', P_ID_LAVAGEM, SQLERRM;
 END;
 $$
 LANGUAGE PLPGSQL;
+
 ---------------------------------------------------------------------------------------------------
 
 -- Função para remover um valor do VALOR_TOTAL_LAVAGEM de uma lavagem específica
 CREATE OR REPLACE FUNCTION REMOVER_VALOR_EXTRA_LAVAGEM(
     P_ID_LAVAGEM INT,
-    P_VALOR_REMOVER DECIMAL(10,2)
+    P_VALOR_DESCONTO DECIMAL(10,2)
 )
 RETURNS VOID
 AS $$
 DECLARE
-    v_valor_atual DECIMAL(10,2);
-    v_novo_valor DECIMAL(10,2);
-    v_tabela_nome TEXT := 'LAVAGEM';
-    v_conjunto_atualizacao TEXT;
-    v_condicao TEXT;
+    v_num_ultima_parcela INT;
 BEGIN
-    -- 1. Verificar se a lavagem existe e obter o valor total atual
-    SELECT VALOR_TOTAL_LAVAGEM INTO v_valor_atual
-    FROM LAVAGEM
-    WHERE ID_LAVAGEM = P_ID_LAVAGEM;
-
-    -- Se a lavagem não for encontrada, lança uma exceção
-    IF NOT FOUND THEN
+    -- 1. Verifica se a lavagem existe
+    IF NOT EXISTS (SELECT 1 FROM lavagem WHERE id_lavagem = P_ID_LAVAGEM) THEN
         RAISE EXCEPTION 'Erro: Lavagem com ID % não encontrada.', P_ID_LAVAGEM;
     END IF;
 
-    -- 2. Calcular o novo valor total
-    -- Se o valor atual for NULL, considera 0 para a subtração
-    v_novo_valor := COALESCE(v_valor_atual, 0) - P_VALOR_REMOVER;
-
-    -- 3. Garantir que o valor total não seja negativo
-    IF v_novo_valor < 0 THEN
-        RAISE NOTICE 'Atenção: A remoção de R$ % do valor total da lavagem ID % resultaria em um valor negativo (R$ %). O VALOR_TOTAL_LAVAGEM foi ajustado para R$ 0.00.',
-                     P_VALOR_REMOVER, P_ID_LAVAGEM, v_novo_valor;
-        v_novo_valor := 0;
+    -- 2. Garante que o valor do desconto seja positivo
+    IF P_VALOR_DESCONTO <= 0 THEN
+        RAISE EXCEPTION 'O valor do desconto deve ser um número positivo.';
     END IF;
 
-    -- 4. Preparar os argumentos para a função ALTERAR
-    v_conjunto_atualizacao := 'VALOR_TOTAL_LAVAGEM = ' || v_novo_valor::TEXT;
-    v_condicao := 'ID_LAVAGEM = ' || P_ID_LAVAGEM::TEXT;
+    -- 3. Descobre qual o número da última parcela existente
+    SELECT COALESCE(MAX(num_parcela), 0) INTO v_num_ultima_parcela
+    FROM parcela
+    WHERE fk_parcela_lavagem = P_ID_LAVAGEM;
 
-    -- 5. Chamar a função ALTERAR para atualizar o registro da lavagem
-    PERFORM ALTERAR(v_tabela_nome, v_conjunto_atualizacao, v_condicao);
+    -- 4. Insere uma NOVA PARCELA com valor NEGATIVO para representar o desconto
+    INSERT INTO parcela (fk_parcela_lavagem, num_parcela, valor_parcela, dt_vencimento, status_parcela)
+    VALUES (
+        P_ID_LAVAGEM,
+        v_num_ultima_parcela + 1,
+        -P_VALOR_DESCONTO, -- O valor do desconto é inserido como negativo
+        CURRENT_DATE,
+        'PAGO' -- Um desconto é considerado "pago" no momento em que é concedido
+    );
 
-    RAISE NOTICE 'Valor de R$ % removido com sucesso da lavagem ID %.', P_VALOR_REMOVER, P_ID_LAVAGEM;
-    RAISE NOTICE 'Novo VALOR_TOTAL_LAVAGEM para lavagem ID % é R$ %.', P_ID_LAVAGEM, v_novo_valor;
+    RAISE NOTICE 'Desconto de R$ % aplicado com sucesso à lavagem ID %.', P_VALOR_DESCONTO, P_ID_LAVAGEM;
 
-EXCEPTION
-    WHEN OTHERS THEN
-        RAISE EXCEPTION 'Erro ao remover valor extra da lavagem ID %: %', P_ID_LAVAGEM, SQLERRM;
 END;
 $$
 LANGUAGE PLPGSQL;
+-----------------------------------------------------------------------------------------
+
+-- Função para verificar se o peso da lavagem é positivo
+CREATE OR REPLACE FUNCTION VERIFICAR_PESO_LAVAGEM_POSITIVO()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Verifica se o novo valor de PESO_LAVAGEM é menor que 0
+    IF NEW.PESO_LAVAGEM < 0 THEN
+        -- Se for negativo, lança uma exceção personalizada
+        RAISE EXCEPTION 'Erro: O peso da lavagem não pode ser negativo. Valor fornecido: %', NEW.PESO_LAVAGEM;
+    END IF;
+
+    -- Retorna NEW para permitir que a operação de INSERT ou UPDATE continue
+    RETURN NEW;
+END;
+$$
+LANGUAGE PLPGSQL;
+------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION fun_sincronizar_dados_lavagem()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_lavagem_id_alvo INT;
+BEGIN
+    -- Determina qual lavagem precisa ser atualizada.
+    -- Se uma parcela foi deletada, usa o ID antigo (OLD).
+    -- Se foi inserida ou atualizada, usa o ID novo (NEW).
+    IF TG_OP = 'DELETE' THEN
+        v_lavagem_id_alvo := OLD.fk_parcela_lavagem;
+    ELSE
+        v_lavagem_id_alvo := NEW.fk_parcela_lavagem;
+    END IF;
+
+    -- Se não houver uma lavagem associada, não faz nada.
+    IF v_lavagem_id_alvo IS NULL THEN
+        RETURN NULL;
+    END IF;
+
+    -- Recalcula a soma e a contagem das parcelas e atualiza a tabela lavagem.
+    -- COALESCE(..., 0) garante que o resultado seja 0 se não houver parcelas, evitando nulos.
+    UPDATE lavagem
+    SET 
+        valor_total_lavagem = (SELECT COALESCE(SUM(valor_parcela), 0) FROM parcela WHERE fk_parcela_lavagem = v_lavagem_id_alvo),
+        qtd_parcelas = (SELECT COUNT(*) FROM parcela WHERE fk_parcela_lavagem = v_lavagem_id_alvo)
+    WHERE 
+        id_lavagem = v_lavagem_id_alvo;
+
+    -- Para gatilhos AFTER, o retorno geralmente é NULL.
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+
 --------------------------------------------------------------
 --------------------------------------------------------------
 --------------------------------------------------------------
@@ -833,7 +900,7 @@ LANGUAGE PLPGSQL;
 
 
 --------------------|| FUNÇÕES AUDITORIA ||-------------------
---------------------------------------------------------------
+-------------------------------@------------------------------
 --------------------------------------------------------------
 CREATE OR REPLACE FUNCTION trg_auditoria_generica()
 RETURNS TRIGGER AS $$
@@ -939,7 +1006,7 @@ $$ LANGUAGE plpgsql;
 
 
 ---------------------|| FUNÇÕES PARCELA ||--------------------
---------------------------------------------------------------
+-------------------------------@------------------------------
 --------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION ATUALIZAR_STATUS_PARCELAS()
@@ -1024,55 +1091,73 @@ END;
 $$ LANGUAGE plpgsql;
 ----------------------------------------------------------------------------
 
--- Função para validar o número de parcelas ao inserir/atualizar uma PARCELA
-CREATE OR REPLACE FUNCTION VALIDAR_NUM_PARCELAS_PARCELA()
+CREATE OR REPLACE FUNCTION fun_validar_qtd_parcelas()
 RETURNS TRIGGER AS $$
-DECLARE
-    v_valor_total_lavagem DECIMAL(10,2);
-    v_max_parcelas INT;
 BEGIN
-    -- Obtém o valor total da lavagem associada
-    SELECT VALOR_TOTAL_LAVAGEM INTO v_valor_total_lavagem
-    FROM LAVAGEM
-    WHERE ID_LAVAGEM = NEW.fk_parcela_lavagem;
-
-    -- Se não houver lavagem associada ou valor total for nulo/inválido
-    IF v_valor_total_lavagem IS NULL OR v_valor_total_lavagem <= 0 THEN
-        RAISE NOTICE 'Atenção: Não foi possível validar o número de parcelas para a lavagem % devido ao valor total inválido.', NEW.fk_parcela_lavagem;
-        RETURN NEW; -- Permite a operação, mas com uma nota de atenção
+    IF NEW.qtd_parcelas < 0 OR NEW.qtd_parcelas > 12 THEN
+        RAISE EXCEPTION 'O número de parcelas deve estar entre 0 e 12. Valor fornecido: %', NEW.qtd_parcelas;
     END IF;
-
-    -- *** NOVA LÓGICA AQUI: Permite 1 parcela (à vista) sempre ***
-    IF NEW.NUM_PARCELA = 1 THEN
-        RETURN NEW; -- Se for 1 parcela, sempre permite e sai da função.
-    END IF;
-
-    -- Define as regras de parcelamento para mais de 1 parcela
-    -- Se o valor total for <= 50.00 e NUM_PARCELA > 1, lança exceção
-    IF v_valor_total_lavagem <= 50.00 THEN
-        RAISE EXCEPTION 'Erro: Lavagens com valor de R$ % não são elegíveis para parcelamento em mais de uma vez.', v_valor_total_lavagem;
-    ELSIF v_valor_total_lavagem > 500.00 THEN
-        v_max_parcelas := 12;
-    ELSIF v_valor_total_lavagem > 200.00 THEN
-        v_max_parcelas := 6;
-    ELSIF v_valor_total_lavagem > 100.00 THEN
-        v_max_parcelas := 4;
-    ELSIF v_valor_total_lavagem > 50.00 THEN
-        v_max_parcelas := 2;
-    END IF;
-
-    -- Verifica se o número de parcelas desejado excede o limite (apenas para NUM_PARCELA > 1)
-    IF NEW.NUM_PARCELA > v_max_parcelas THEN
-        RAISE EXCEPTION 'Erro: O número de parcelas desejado (%) excede o limite para o valor total da lavagem (R$ %). O máximo permitido é % parcelas.',
-                        NEW.NUM_PARCELA, v_valor_total_lavagem, v_max_parcelas;
-    END IF;
-
+    
     RETURN NEW;
 END;
 $$ LANGUAGE PLPGSQL;
 
+
 --------------------------------------------------------------
 --------------------------------------------------------------
 --------------------------------------------------------------
 --------------------------------------------------------------
 
+
+
+
+
+
+
+
+
+-----------------|| FUNÇÕES LAVAGEM PRODUTO ||----------------
+-------------------------------@------------------------------
+--------------------------------------------------------------
+
+-- Função para deletar registros em LAVAGEM_PRODUTO quando uma LAVAGEM é deletada --
+CREATE OR REPLACE FUNCTION DELETAR_LAVAGEM_CASCADE_LAVAGEM_PRODUTO()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM LAVAGEM_PRODUTO
+    WHERE fk_lavagem_produto_lavagem = OLD.ID_LAVAGEM;
+    RETURN OLD;
+END;
+$$ LANGUAGE PLPGSQL;
+------------------------------------------------------------------------------------
+
+-- Função para deletar registros em LAVAGEM_PRODUTO quando um PRODUTO é deletado --
+CREATE OR REPLACE FUNCTION DELETAR_PRODUTO_CASCADE_LAVAGEM_PRODUTO()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM LAVAGEM_PRODUTO
+    WHERE fk_lavagem_produto_produto = OLD.ID_PRODUTO;
+    RETURN OLD;
+END;
+$$ LANGUAGE PLPGSQL;
+
+----------------------------------------------------------------------------------
+
+-- Função para não permitir valores negativos em QTD_UTILIZADA --
+CREATE OR REPLACE FUNCTION VERIFICAR_QTD_UTILIZADA_POSITIVO()
+RETURNS TRIGGER AS $$
+BEGIN
+	IF (NEW.QTD_UTILIZADA < 0) THEN
+		RAISE EXCEPTION 'A quantidade fornecida não pode ser negativa. Valor fornecido: %', NEW.QTD_UTILIZADA; -- Adicionado ; aqui
+	END IF;
+
+	RETURN NEW;
+END;
+$$
+LANGUAGE PLPGSQL;
+-----------------------------------------------------------------
+
+--------------------------------------------------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
