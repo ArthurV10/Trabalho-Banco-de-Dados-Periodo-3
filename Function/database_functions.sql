@@ -6,44 +6,31 @@
 
 ----------- Função para cadastrar dados dentro de qualquer tabela -----------
 CREATE OR REPLACE FUNCTION CADASTRAR(
-	P_NOME_TABELA TEXT,
-	P_VALORES_PARA_INSERIR TEXT
+    P_NOME_TABELA TEXT,
+    P_VALORES_PARA_INSERIR TEXT
 )
 RETURNS VOID
 AS $$
 DECLARE
-    -- Variáveis para capturar os detalhes do erro original
     v_original_error_message TEXT;
     v_original_sqlstate TEXT;
 BEGIN
-	-- Tenta executar a inserção.
-	-- Se um erro ocorrer aqui, ele será capturado pelo bloco EXCEPTION abaixo.
-	EXECUTE 'INSERT INTO ' || quote_ident(P_NOME_TABELA) || ' VALUES (' || P_VALORES_PARA_INSERIR || ')';
-
-	-- Esta notificação só será exibida se a inserção for bem-sucedida.
-	RAISE NOTICE 'Dados inseridos corretamente na tabela %' , P_NOME_TABELA;
-
+    EXECUTE 'INSERT INTO ' || quote_ident(P_NOME_TABELA) || ' VALUES (' || P_VALORES_PARA_INSERIR || ')';
+    RAISE NOTICE 'Dados inseridos corretamente na tabela %' , P_NOME_TABELA;
 EXCEPTION
-	-- Captura qualquer tipo de erro que ocorra durante o EXECUTE.
-	WHEN OTHERS THEN
-        -- GET STACKED DIAGNOSTICS é usado para obter informações detalhadas
-        -- sobre o erro que acabou de ocorrer, incluindo a mensagem original e o SQLSTATE.
+    WHEN OTHERS THEN
         GET STACKED DIAGNOSTICS
-            v_original_error_message = MESSAGE_TEXT, -- A mensagem de erro original (ex: do trigger de CPF)
-            v_original_sqlstate = RETURNED_SQLSTATE; -- O código SQLSTATE do erro original (ex: 'P0001' para RAISE EXCEPTION)
+            v_original_error_message = MESSAGE_TEXT,
+            v_original_sqlstate = RETURNED_SQLSTATE;
 
-        -- Verifica se o erro é especificamente aquele levantado por um RAISE EXCEPTION (SQLSTATE 'P0001'),
-        -- como o erro de CPF duplicado do seu trigger.
-        IF v_original_sqlstate = 'P0001' THEN
-            -- Se for o erro de CPF duplicado, combinamos a mensagem original do trigger
-            -- com a sua mensagem genérica da função CADASTRAR.
-            RAISE EXCEPTION 'Erro ao inserir dados na tabela "%". % Por favor, verifique os dados fornecidos.',
+        IF v_original_sqlstate = '42501' THEN -- Permissão negada
+            RAISE EXCEPTION 'Acesso negado. O seu perfil de utilizador não tem permissão para inserir dados na tabela "%".', P_NOME_TABELA;
+        ELSIF v_original_sqlstate = 'P0001' THEN -- Erro de negócio (dos seus gatilhos)
+            RAISE EXCEPTION 'Erro ao inserir dados na tabela "%". %. Por favor, verifique os dados fornecidos.',
                             P_NOME_TABELA, v_original_error_message;
-        ELSE
-            -- Para qualquer outro tipo de erro (ex: violação de NOT NULL, tipo de dado incorreto,
-            -- coluna inexistente, etc.), usamos apenas a mensagem genérica.
-            RAISE EXCEPTION 'Erro ao inserir dados na tabela "%". Por favor, verifique os dados fornecidos ou a estrutura da tabela.',
-                            P_NOME_TABELA;
+        ELSE -- Outros erros
+            RAISE EXCEPTION 'Erro ao inserir dados na tabela "%". Por favor, verifique os dados fornecidos ou a estrutura da tabela. (Erro: %)',
+                            P_NOME_TABELA, SQLERRM;
         END IF;
 END;
 $$
@@ -58,24 +45,32 @@ CREATE OR REPLACE FUNCTION DELETAR(
 )
 RETURNS VOID
 AS $$
+DECLARE
+    v_original_error_message TEXT;
+    v_original_sqlstate TEXT;
 BEGIN
     IF (P_CONDICIONAL_DELETAR IS NULL) THEN
-        -- Deleta todos os dados da tabela
         EXECUTE 'DELETE FROM ' || quote_ident(P_NOME_TABELA);
-        
         RAISE NOTICE 'Todos os dados da tabela "%" foram deletados com sucesso.', P_NOME_TABELA;
     ELSE
-        -- Deleta dados com base na condição fornecida
         EXECUTE 'DELETE FROM ' || quote_ident(P_NOME_TABELA) || ' WHERE ' || P_CONDICIONAL_DELETAR;
         RAISE NOTICE 'Os dados da tabela "%" com a condição "%" foram deletados com sucesso.', P_NOME_TABELA, P_CONDICIONAL_DELETAR;
     END IF;
-
 EXCEPTION
     WHEN OTHERS THEN
-        RAISE EXCEPTION 'Erro ao deletar dados da tabela "%": %', P_NOME_TABELA, SQLERRM;
+        GET STACKED DIAGNOSTICS
+            v_original_error_message = MESSAGE_TEXT,
+            v_original_sqlstate = RETURNED_SQLSTATE;
+
+        IF v_original_sqlstate = '42501' THEN -- Permissão negada
+            RAISE EXCEPTION 'Acesso negado. O seu perfil de utilizador não tem permissão para deletar dados da tabela "%".', P_NOME_TABELA;
+        ELSE -- Outros erros
+            RAISE EXCEPTION 'Erro ao deletar dados da tabela "%": %', P_NOME_TABELA, SQLERRM;
+        END IF;
 END;
 $$
 LANGUAGE PLPGSQL;
+
 ------------------------------------------------------------------------------------
 
 
@@ -87,22 +82,38 @@ CREATE OR REPLACE FUNCTION ALTERAR(
 )
 RETURNS VOID
 AS $$
+DECLARE
+    v_original_error_message TEXT;
+    v_original_sqlstate TEXT;
 BEGIN
     EXECUTE 'UPDATE ' || quote_ident(P_NOME_TABELA) ||
             ' SET ' || P_CONJUNTO_ATUALIZACAO ||
             ' WHERE ' || P_CONDICAO;
 
-    IF FOUND THEN -- Verifica se alguma linha foi afetada pelo UPDATE
+    IF FOUND THEN
         RAISE NOTICE 'Dados alterados corretamente na tabela %.', P_NOME_TABELA;
     ELSE
         RAISE NOTICE 'Nenhum registro encontrado ou alterado na tabela % com a condição especificada.', P_NOME_TABELA;
     END IF;
 EXCEPTION
     WHEN OTHERS THEN
-        RAISE EXCEPTION 'Erro ao alterar dados na tabela "%": %', P_NOME_TABELA, SQLERRM;
+        GET STACKED DIAGNOSTICS
+            v_original_error_message = MESSAGE_TEXT,
+            v_original_sqlstate = RETURNED_SQLSTATE;
+
+        IF v_original_sqlstate = '42501' THEN -- Permissão negada
+            RAISE EXCEPTION 'Acesso negado. O seu perfil de utilizador não tem permissão para alterar dados na tabela "%".', P_NOME_TABELA;
+        ELSIF v_original_sqlstate = 'P0001' THEN -- Erro de negócio (dos seus gatilhos)
+            RAISE EXCEPTION 'Erro ao alterar dados na tabela "%". %. Por favor, verifique os dados fornecidos.',
+                            P_NOME_TABELA, v_original_error_message;
+        ELSE -- Outros erros
+            RAISE EXCEPTION 'Erro ao alterar dados na tabela "%". Por favor, verifique os dados fornecidos ou a estrutura da tabela. (Erro: %)',
+                            P_NOME_TABELA, SQLERRM;
+        END IF;
 END;
 $$
 LANGUAGE PLPGSQL;
+
 ------------------------------------------------------------------------------------
 
 
@@ -577,15 +588,11 @@ DECLARE
 BEGIN
 	PERFORM ATUALIZAR_STATUS_PARCELAS();
 
-    -- 1. Busca dos IDs
+    -- 1. Busca dos IDs (A lógica de SELECT...INTO permanece)
     SELECT id_cliente INTO v_cliente_id FROM cliente WHERE cpf = p_cliente_cpf;
-    IF NOT FOUND THEN RAISE EXCEPTION 'Cliente com CPF "%" não encontrado.', p_cliente_cpf; END IF;
     SELECT id_funcionario INTO v_funcionario_id FROM funcionario WHERE cpf = p_funcionario_cpf;
-    IF NOT FOUND THEN RAISE EXCEPTION 'Funcionário com CPF "%" não encontrado.', p_funcionario_cpf; END IF;
     SELECT * INTO v_tipo_lavagem_info FROM tipo_lavagem WHERE descricao = p_tipo_lavagem_descricao;
-    IF NOT FOUND THEN RAISE EXCEPTION 'Tipo de Lavagem com a descrição "%" não encontrado.', p_tipo_lavagem_descricao; END IF;
     SELECT id_tipo_pagamento INTO v_tipo_pagamento_id FROM tipo_pagamento WHERE nome = p_tipo_pagamento_nome;
-    IF NOT FOUND THEN RAISE EXCEPTION 'Tipo de Pagamento com o nome "%" não encontrado.', p_tipo_pagamento_nome; END IF;
 
     -- 2. Cálculo do Preço Total
     IF v_tipo_lavagem_info.preco_fixo IS NOT NULL THEN
@@ -622,6 +629,26 @@ BEGIN
 
     RAISE NOTICE 'Lavagem de ID % (Valor: R$%) cadastrada e % parcela(s) gerada(s) com sucesso.', v_nova_lavagem_id, v_valor_total_calculado, p_qtd_parcelas;
     RETURN v_nova_lavagem_id;
+
+EXCEPTION
+    -- NOVO BLOCO DE EXCEÇÃO INTELIGENTE
+    WHEN NO_DATA_FOUND THEN
+        -- Esta exceção é capturada quando um dos SELECT...INTO não encontra um registo.
+        -- Verificamos qual deles falhou para dar uma mensagem precisa.
+        IF NOT EXISTS (SELECT 1 FROM cliente WHERE cpf = p_cliente_cpf) THEN
+            RAISE EXCEPTION 'Cliente com CPF "%" não encontrado.', p_cliente_cpf;
+        ELSIF NOT EXISTS (SELECT 1 FROM funcionario WHERE cpf = p_funcionario_cpf) THEN
+            RAISE EXCEPTION 'Funcionário com CPF "%" não encontrado.', p_funcionario_cpf;
+        ELSIF NOT EXISTS (SELECT 1 FROM tipo_lavagem WHERE descricao = p_tipo_lavagem_descricao) THEN
+            RAISE EXCEPTION 'Tipo de Lavagem com a descrição "%" não encontrado.', p_tipo_lavagem_descricao;
+        ELSIF NOT EXISTS (SELECT 1 FROM tipo_pagamento WHERE nome = p_tipo_pagamento_nome) THEN
+            RAISE EXCEPTION 'Tipo de Pagamento com o nome "%" não encontrado.', p_tipo_pagamento_nome;
+        ELSE
+            RAISE EXCEPTION 'Um dos identificadores fornecidos (cliente, funcionário, etc.) não foi encontrado.';
+        END IF;
+    WHEN OTHERS THEN
+        -- Captura todos os outros erros e exibe a mensagem genérica.
+        RAISE EXCEPTION 'Não foi possível concluir o cadastro da lavagem. Ocorreu um erro inesperado.';
 END;
 $$ LANGUAGE PLPGSQL;
 
@@ -756,84 +783,7 @@ END;
 $$ LANGUAGE PLPGSQL;
 ------------------------------------------------------------------------------------
 
--- Função para adicionar um valor extra ao VALOR_TOTAL_LAVAGEM de uma lavagem específica
-CREATE OR REPLACE FUNCTION ADICIONAR_VALOR_EXTRA_LAVAGEM(
-    P_ID_LAVAGEM INT,
-    P_VALOR_TAXA DECIMAL(10,2)
-)
-RETURNS VOID
-AS $$
-DECLARE
-    v_num_ultima_parcela INT;
-BEGIN
-    -- 1. Verifica se a lavagem existe
-    IF NOT EXISTS (SELECT 1 FROM lavagem WHERE id_lavagem = P_ID_LAVAGEM) THEN
-        RAISE EXCEPTION 'Erro: Lavagem com ID % não encontrada.', P_ID_LAVAGEM;
-    END IF;
 
-    -- 2. Descobre qual o número da última parcela existente
-    SELECT COALESCE(MAX(num_parcela), 0) INTO v_num_ultima_parcela
-    FROM parcela
-    WHERE fk_parcela_lavagem = P_ID_LAVAGEM;
-
-    -- 3. Insere uma NOVA PARCELA para representar a taxa extra
-    INSERT INTO parcela (fk_parcela_lavagem, num_parcela, valor_parcela, dt_vencimento, status_parcela)
-    VALUES (
-        P_ID_LAVAGEM,
-        v_num_ultima_parcela + 1,
-        P_VALOR_TAXA,
-        CURRENT_DATE, -- Vencimento imediato
-        'PENDENTE'
-    );
-
-    RAISE NOTICE 'Valor de R$ % adicionado com sucesso à lavagem ID %.', P_VALOR_TAXA, P_ID_LAVAGEM;
-
-END;
-$$
-LANGUAGE PLPGSQL;
-
----------------------------------------------------------------------------------------------------
-
--- Função para remover um valor do VALOR_TOTAL_LAVAGEM de uma lavagem específica
-CREATE OR REPLACE FUNCTION REMOVER_VALOR_EXTRA_LAVAGEM(
-    P_ID_LAVAGEM INT,
-    P_VALOR_DESCONTO DECIMAL(10,2)
-)
-RETURNS VOID
-AS $$
-DECLARE
-    v_num_ultima_parcela INT;
-BEGIN
-    -- 1. Verifica se a lavagem existe
-    IF NOT EXISTS (SELECT 1 FROM lavagem WHERE id_lavagem = P_ID_LAVAGEM) THEN
-        RAISE EXCEPTION 'Erro: Lavagem com ID % não encontrada.', P_ID_LAVAGEM;
-    END IF;
-
-    -- 2. Garante que o valor do desconto seja positivo
-    IF P_VALOR_DESCONTO <= 0 THEN
-        RAISE EXCEPTION 'O valor do desconto deve ser um número positivo.';
-    END IF;
-
-    -- 3. Descobre qual o número da última parcela existente
-    SELECT COALESCE(MAX(num_parcela), 0) INTO v_num_ultima_parcela
-    FROM parcela
-    WHERE fk_parcela_lavagem = P_ID_LAVAGEM;
-
-    -- 4. Insere uma NOVA PARCELA com valor NEGATIVO para representar o desconto
-    INSERT INTO parcela (fk_parcela_lavagem, num_parcela, valor_parcela, dt_vencimento, status_parcela)
-    VALUES (
-        P_ID_LAVAGEM,
-        v_num_ultima_parcela + 1,
-        -P_VALOR_DESCONTO, -- O valor do desconto é inserido como negativo
-        CURRENT_DATE,
-        'PAGO' -- Um desconto é considerado "pago" no momento em que é concedido
-    );
-
-    RAISE NOTICE 'Desconto de R$ % aplicado com sucesso à lavagem ID %.', P_VALOR_DESCONTO, P_ID_LAVAGEM;
-
-END;
-$$
-LANGUAGE PLPGSQL;
 -----------------------------------------------------------------------------------------
 
 -- Função para verificar se o peso da lavagem é positivo
@@ -1156,6 +1106,310 @@ END;
 $$
 LANGUAGE PLPGSQL;
 -----------------------------------------------------------------
+
+--------------------------------------------------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+--------------------------------------------------------------
+
+
+-----------|| FUNÇÕES ESPECIFICAS(FUNCIONARIOS) ||------------
+-------------------------------@------------------------------
+--------------------------------------------------------------
+
+----------------------------------------------------------------------
+-- SEÇÃO 1: FUNÇÕES PARA O PERFIL "OPERACIONAL" (Lavador/Passadeira)
+----------------------------------------------------------------------
+
+-- Função 1.1: Atualizar o Status de uma Lavagem
+CREATE OR REPLACE FUNCTION ATUALIZAR_STATUS_LAVAGEM(
+    p_id_lavagem INT,       -- Parâmetro de entrada: O ID da lavagem a ser atualizada
+    p_novo_status VARCHAR   -- Parâmetro de entrada: O novo status (ex: 'CONCLUIDA')
+)
+RETURNS VOID AS $$
+DECLARE
+    -- Declara uma variável local para armazenar a data de entrega, se aplicável
+    v_dt_real_entrega TIMESTAMP := NULL;
+BEGIN
+    -- Verifica se o novo status é 'CONCLUIDA'
+    IF p_novo_status = 'CONCLUIDA' THEN
+        -- Se for, define a variável com a data e hora atuais do sistema
+        v_dt_real_entrega := CURRENT_TIMESTAMP;
+    END IF;
+
+    -- Executa o comando de atualização na tabela 'lavagem'
+    UPDATE lavagem
+    -- Define os novos valores para as colunas
+    SET 
+        -- Atualiza o status da lavagem com o valor recebido no parâmetro
+        status_lavagem = p_novo_status,
+        -- Usa COALESCE para atualizar a dt_real_entrega apenas se ela estiver nula, evitando sobrescrever uma data já existente
+        dt_real_entrega = COALESCE(dt_real_entrega, v_dt_real_entrega)
+    -- Especifica qual lavagem deve ser atualizada com base no ID recebido
+    WHERE id_lavagem = p_id_lavagem;
+
+    -- Verifica se o comando UPDATE encontrou e atualizou alguma linha
+    IF NOT FOUND THEN
+        -- Se nenhuma linha foi afetada, lança um erro informando que a lavagem não foi encontrada
+        RAISE EXCEPTION 'Lavagem com ID % não encontrada.', p_id_lavagem;
+    ELSE
+        -- Se a atualização foi bem-sucedida, exibe uma mensagem de confirmação no console
+        RAISE NOTICE 'Status da lavagem ID % atualizado para "%".', p_id_lavagem, p_novo_status;
+    END IF;
+END;
+$$ LANGUAGE PLPGSQL;
+
+
+----------------------------------------------------------------------
+-- SEÇÃO 2: FUNÇÕES PARA O PERFIL "BALCONISTA"
+----------------------------------------------------------------------
+
+-- Função 2.1: Atualizar Dados de Contato de um Cliente
+CREATE OR REPLACE FUNCTION ATUALIZAR_DADOS_CLIENTE(
+    p_cliente_cpf VARCHAR,      -- Parâmetro de entrada: O CPF do cliente a ser atualizado
+    p_novo_telefone VARCHAR,    -- Parâmetro de entrada: O novo telefone
+    p_novo_email VARCHAR,       -- Parâmetro de entrada: O novo e-mail
+    p_novo_endereco VARCHAR     -- Parâmetro de entrada: O novo endereço
+)
+RETURNS VOID AS $$
+BEGIN
+    -- Executa o comando de atualização na tabela 'cliente'
+    UPDATE cliente
+    -- Define os novos valores para as colunas de contato
+    SET 
+        telefone = p_novo_telefone,
+        email = p_novo_email,
+        endereco = p_novo_endereco
+    -- Especifica qual cliente deve ser atualizado com base no CPF recebido
+    WHERE cpf = p_cliente_cpf;
+
+    -- Verifica se o comando UPDATE encontrou e atualizou alguma linha
+    IF NOT FOUND THEN
+        -- Se nenhum cliente com aquele CPF foi encontrado, lança um erro
+        RAISE EXCEPTION 'Nenhum cliente encontrado com o CPF: %', p_cliente_cpf;
+    ELSE
+        -- Se a atualização foi bem-sucedida, exibe uma mensagem de confirmação
+        RAISE NOTICE 'Dados do cliente com CPF % atualizados.', p_cliente_cpf;
+    END IF;
+END;
+$$ LANGUAGE PLPGSQL;
+
+
+-- Função 2.2: Adicionar parcela a uma Lavagem
+CREATE OR REPLACE FUNCTION ADICIONAR_VALOR_EXTRA_LAVAGEM(
+    P_ID_LAVAGEM INT,
+    P_VALOR_TAXA DECIMAL(10,2)
+)
+RETURNS VOID
+AS $$
+DECLARE
+    v_num_ultima_parcela INT;
+BEGIN
+    -- 1. Verifica se a lavagem existe
+    IF NOT EXISTS (SELECT 1 FROM lavagem WHERE id_lavagem = P_ID_LAVAGEM) THEN
+        RAISE EXCEPTION 'Erro: Lavagem com ID % não encontrada.', P_ID_LAVAGEM;
+    END IF;
+
+    -- 2. Descobre qual o número da última parcela existente
+    SELECT COALESCE(MAX(num_parcela), 0) INTO v_num_ultima_parcela
+    FROM parcela
+    WHERE fk_parcela_lavagem = P_ID_LAVAGEM;
+
+    -- 3. Insere uma NOVA PARCELA para representar a taxa extra
+    INSERT INTO parcela (fk_parcela_lavagem, num_parcela, valor_parcela, dt_vencimento, status_parcela)
+    VALUES (
+        P_ID_LAVAGEM,
+        v_num_ultima_parcela + 1,
+        P_VALOR_TAXA,
+        CURRENT_DATE, -- Vencimento imediato
+        'PENDENTE'
+    );
+
+    RAISE NOTICE 'Valor de R$ % adicionado com sucesso à lavagem ID %.', P_VALOR_TAXA, P_ID_LAVAGEM;
+
+END;
+$$
+LANGUAGE PLPGSQL;
+
+
+-- Função 2.3: Aplicar um remover parcela a uma Lavagem
+CREATE OR REPLACE FUNCTION REMOVER_VALOR_EXTRA_LAVAGEM(
+    P_ID_LAVAGEM INT,
+    P_VALOR_DESCONTO DECIMAL(10,2)
+)
+RETURNS VOID
+AS $$
+DECLARE
+    v_num_ultima_parcela INT;
+BEGIN
+    -- 1. Verifica se a lavagem existe
+    IF NOT EXISTS (SELECT 1 FROM lavagem WHERE id_lavagem = P_ID_LAVAGEM) THEN
+        RAISE EXCEPTION 'Erro: Lavagem com ID % não encontrada.', P_ID_LAVAGEM;
+    END IF;
+
+    -- 2. Garante que o valor do desconto seja positivo
+    IF P_VALOR_DESCONTO <= 0 THEN
+        RAISE EXCEPTION 'O valor do desconto deve ser um número positivo.';
+    END IF;
+
+    -- 3. Descobre qual o número da última parcela existente
+    SELECT COALESCE(MAX(num_parcela), 0) INTO v_num_ultima_parcela
+    FROM parcela
+    WHERE fk_parcela_lavagem = P_ID_LAVAGEM;
+
+    -- 4. Insere uma NOVA PARCELA com valor NEGATIVO para representar o desconto
+    INSERT INTO parcela (fk_parcela_lavagem, num_parcela, valor_parcela, dt_vencimento, status_parcela)
+    VALUES (
+        P_ID_LAVAGEM,
+        v_num_ultima_parcela + 1,
+        -P_VALOR_DESCONTO, -- O valor do desconto é inserido como negativo
+        CURRENT_DATE,
+        'PAGO' -- Um desconto é considerado "pago" no momento em que é concedido
+    );
+
+    RAISE NOTICE 'Desconto de R$ % aplicado com sucesso à lavagem ID %.', P_VALOR_DESCONTO, P_ID_LAVAGEM;
+
+END;
+$$
+LANGUAGE PLPGSQL;
+
+
+-- Função 2.4: Registrar o Pagamento de uma Parcela
+CREATE OR REPLACE FUNCTION REGISTRAR_PAGAMENTO_PARCELA(
+    p_id_parcela INT -- Parâmetro de entrada: O ID da parcela que foi paga
+)
+RETURNS VOID AS $$
+BEGIN
+    -- Executa o comando de atualização na tabela 'parcela'
+    UPDATE parcela
+    -- Define os novos valores
+    SET 
+        status_parcela = 'PAGO',        -- Muda o status para 'PAGO'
+        dt_pagamento = CURRENT_DATE     -- Registra a data do pagamento como hoje
+    -- Especifica qual parcela deve ser atualizada
+    WHERE
+        id_parcela = p_id_parcela       -- Pelo ID recebido
+        AND status_parcela <> 'PAGO';   -- E apenas se ela ainda não estiver paga, para evitar duplicação
+
+    -- Verifica se alguma linha foi realmente atualizada
+    IF NOT FOUND THEN
+        -- Se não, informa que a parcela não foi encontrada ou já estava paga
+        RAISE NOTICE 'Nenhuma parcela pendente ou atrasada encontrada com o ID %, ou ela já foi paga.', p_id_parcela;
+    ELSE
+        -- Se sim, exibe uma mensagem de sucesso
+        RAISE NOTICE 'Pagamento da parcela de ID % registrado com sucesso.', p_id_parcela;
+    END IF;
+END;
+$$ LANGUAGE PLPGSQL;
+
+
+----------------------------------------------------------------------
+-- SEÇÃO 3: FUNÇÕES PARA O PERFIL "GERENTE"
+----------------------------------------------------------------------
+
+-- Função 3.1: Realizar uma Nova Compra de Produtos
+CREATE OR REPLACE FUNCTION REALIZAR_COMPRA_COMPLETA(
+    p_fornecedor_cnpj VARCHAR, -- Parâmetro: CNPJ do fornecedor
+    p_dt_compra DATE,          -- Parâmetro: Data da compra
+    p_itens_json JSONB         -- Parâmetro: Uma lista de itens no formato JSON
+)
+RETURNS INT AS $$
+DECLARE
+    v_fornecedor_id INT;
+    v_nova_compra_id INT;
+    v_valor_total_calculado DECIMAL(10, 2) := 0;
+    item_info JSONB;
+    v_produto_id INT;
+    v_descricao_item TEXT;
+BEGIN
+    -- Busca o ID do fornecedor a partir do CNPJ informado
+    SELECT id_fornecedor INTO v_fornecedor_id FROM fornecedor WHERE cnpj = p_fornecedor_cnpj;
+    -- Se não encontrar, lança um erro
+    IF NOT FOUND THEN RAISE EXCEPTION 'Fornecedor com CNPJ "%" não encontrado.', p_fornecedor_cnpj; END IF;
+
+    -- Cria o registro "pai" na tabela 'compra' com um valor total temporário
+    INSERT INTO compra (fk_compra_fornecedor, dt_compra, valor_total, status_compra)
+    VALUES (v_fornecedor_id, p_dt_compra, 0, 'PENDENTE')
+    -- Captura o ID da nova compra que acabou de ser criada
+    RETURNING id_compra INTO v_nova_compra_id;
+
+    -- Inicia um laço que percorre cada objeto dentro do array JSON de itens
+    FOR item_info IN SELECT * FROM jsonb_array_elements(p_itens_json) LOOP
+        -- Para cada item, busca o ID do produto pelo nome
+        SELECT id_produto INTO v_produto_id FROM produto WHERE nome = (item_info ->> 'nome_produto');
+        -- Se o produto não estiver cadastrado, lança um erro
+        IF NOT FOUND THEN RAISE EXCEPTION 'Produto com nome "%" não encontrado no catálogo.', (item_info ->> 'nome_produto'); END IF;
+
+        -- Cria uma descrição amigável para o item da compra
+        v_descricao_item := (item_info ->> 'qtd')::TEXT || 'x ' || (item_info ->> 'nome_produto');
+        
+        -- Insere o item na tabela 'item', ligando-o à compra recém-criada
+        INSERT INTO item (fk_item_compra, fk_item_produto, descricao_item, qtd_item, valor_unitario)
+        VALUES (v_nova_compra_id, v_produto_id, v_descricao_item, (item_info ->> 'qtd')::DECIMAL, (item_info ->> 'valor_unitario')::DECIMAL);
+        
+        -- Acumula o valor total da compra somando o valor de cada item
+        v_valor_total_calculado := v_valor_total_calculado + ((item_info ->> 'qtd')::DECIMAL * (item_info ->> 'valor_unitario')::DECIMAL);
+    END LOOP;
+
+    -- Após inserir todos os itens, atualiza o registro da compra com o valor total final
+    UPDATE compra
+    SET valor_total = v_valor_total_calculado
+    WHERE id_compra = v_nova_compra_id;
+
+    -- Exibe uma mensagem de sucesso
+    RAISE NOTICE 'Compra de ID % no valor de R$ % registrada com sucesso.', v_nova_compra_id, v_valor_total_calculado;
+    -- Retorna o ID da nova compra
+    RETURN v_nova_compra_id;
+END;
+$$ LANGUAGE PLPGSQL;
+
+
+-- Função 3.2: Concluir a Entrega de uma Compra e Atualizar Estoque
+CREATE OR REPLACE FUNCTION CONCLUIR_ENTREGA_COMPRA(
+    p_id_compra INT -- Parâmetro de entrada: O ID da compra que foi entregue
+)
+RETURNS VOID AS $$
+BEGIN
+    -- Atualiza o status da compra para 'ENTREGUE'
+    -- Esta ação irá acionar automaticamente o gatilho 'trg_adicionar_estoque_apos_entrega'
+    UPDATE compra
+    SET status_compra = 'ENTREGUE'
+    WHERE id_compra = p_id_compra;
+
+    -- Verifica se a compra foi encontrada e atualizada
+    IF NOT FOUND THEN
+        -- Se não, lança um erro
+        RAISE EXCEPTION 'Compra com ID % não encontrada.', p_id_compra;
+    ELSE
+        -- Se sim, exibe uma mensagem de sucesso
+        RAISE NOTICE 'Entrega da compra de ID % concluída. Estoque atualizado.', p_id_compra;
+    END IF;
+END;
+$$ LANGUAGE PLPGSQL;
+
+--====================================================================
+-- 4. EXEMPLOS DE USO
+--====================================================================
+
+-- Exemplo 1: Pagar a parcela de ID 5
+-- SELECT REGISTRAR_PAGAMENTO_PARCELA(5);
+
+
+-- Exemplo 2: Realizar uma nova compra de múltiplos produtos
+/*
+SELECT REALIZAR_COMPRA_COMPLETA(
+    p_fornecedor_cnpj := '00.111.222/0001-33', -- Limpa Tudo Soluções
+    p_dt_compra := '2025-07-05',
+    p_itens_json := '[
+        {"nome_produto": "Sabão Líquido Profissional", "qtd": 10, "valor_unitario": 85.00},
+        {"nome_produto": "Amaciante Perfumado", "qtd": 5, "valor_unitario": 70.00}
+    ]'::JSONB
+);
+*/
+
+-- Exemplo 3: Dar entrada no estoque da compra que acabamos de criar (supondo que ela recebeu o ID 7)
+-- SELECT CONCLUIR_ENTREGA_COMPRA(7);
+
 
 --------------------------------------------------------------
 --------------------------------------------------------------
